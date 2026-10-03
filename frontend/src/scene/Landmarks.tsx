@@ -75,9 +75,8 @@ export function Landmarks({ bundle }: { bundle: AreaBundle }) {
         return (
           <group key={i}>
             <Cairn position={p} />
-            {view === 'scene' && (
-              <Label position={[p[0], p[1] + 38 * VERT_EXAG, p[2]]}>{t.name ? `Trailhead: ${t.name}` : 'Trailhead'}</Label>
-            )}
+            {/* only named trailheads get a label; the rest are plain cairns (keeps the map readable) */}
+            {view === 'scene' && t.name && <Label position={[p[0], p[1] + 38 * VERT_EXAG, p[2]]}>{`Trailhead: ${t.name}`}</Label>}
           </group>
         );
       })}

@@ -52,6 +52,7 @@ interface State {
   snapshots: { key: string; byHour: Map<number, Float32Array> } | null;
   profile: keyof typeof PROFILES;
   lkp: [number, number];
+  warmed: boolean;
 }
 
 interface Ensemble {
@@ -110,6 +111,7 @@ function init(m: InitMsg) {
     snapshots: null,
     profile: 'child712',
     lkp: [0, 0],
+    warmed: false,
   };
   // helper workers run ensemble members in parallel (inline fallback if unavailable)
   pool?.terminate();
@@ -412,6 +414,11 @@ async function handle({ id, req }: Envelope): Promise<void> {
         s.lkp = req.lkp;
         recomputePrior();
         result = recomputePosterior();
+        if (!s.warmed && pool && s.detailPost) {
+          // first probability map: warm the helpers in the background
+          s.warmed = true;
+          pool.warm(s.detailPost, s.wind.hours[Math.min(2, s.wind.hours.length - 1)]);
+        }
         break;
       }
       case 'brush': {

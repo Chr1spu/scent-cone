@@ -40,6 +40,13 @@ export class EnsemblePool {
     });
   }
 
+  /** Tiny throwaway runs so every helper has started, compiled its hot loop and cached sun masks. */
+  warm(prob: Float32Array, tEnd: number) {
+    for (let i = 0; i < this.workers.length; i++) {
+      this.run({ prob, tEnd, members: 1, memberRange: [0, 1], particles: 150, windowMin: 60, dt: 60, seed: i, withBlocks: false }).catch(() => undefined);
+    }
+  }
+
   terminate() {
     for (const w of this.workers) w.terminate();
     this.workers = [];
