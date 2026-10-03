@@ -29,6 +29,10 @@ export class EnsemblePool {
     return this.workers.length;
   }
 
+  setTuning(tuning: { tauScale: number; liftScale: number }) {
+    for (const w of this.workers) w.postMessage({ type: 'tuning', tuning } satisfies HelperMsg);
+  }
+
   setWind(wind: Extract<HelperMsg, { type: 'wind' }>['wind']) {
     for (const w of this.workers) w.postMessage({ type: 'wind', wind } satisfies HelperMsg);
   }

@@ -1,10 +1,13 @@
 import { useState, type ReactNode } from 'react';
-import { PROFILES, type ProfileId } from '../config/modelParams';
 import { Link } from '../router';
-import { computeDetailAt, deployTeams, fmtTime, releaseScent, resetSearch, scheduleHeat, setOnsiteWind, setProfile } from '../state/controller';
+import { computeDetailAt, deployTeams, fmtTime, releaseScent, resetSearch, scheduleHeat, setOnsiteWind } from '../state/controller';
 import { LAYER_LABELS, useStore, type LayerId, type Tool } from '../state/store';
 import { Icon } from '../ui/icons';
 import { SearchOptions } from './SearchOptions';
+import { SourceSection } from './SourceSection';
+import { MISSIONS, type SourceKind } from '../config/missions';
+
+const SOURCE_TITLE: Record<SourceKind, string> = { lkp: 'Subject', water: 'Where they went in', hides: 'Hides', area: 'Search area', habitat: 'Habitat' };
 
 function Section({ n, title, right, children }: { n?: number; title: string; right?: ReactNode; children: ReactNode }) {
   return (
@@ -45,8 +48,7 @@ function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; c
 
 export function ControlPanel() {
   const bundle = useStore((s) => s.bundle);
-  const profile = useStore((s) => s.profile);
-  const prob = useStore((s) => s.prob);
+  const mission = useStore((s) => MISSIONS[s.mission]);
   const teams = useStore((s) => s.teams);
   const mode = useStore((s) => s.mode);
   const layers = useStore((s) => s.layers);
@@ -68,7 +70,7 @@ export function ControlPanel() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="border-b border-rule px-4 py-3">
-        <p className="text-[13px] leading-snug text-ink-2">{c.scenario}</p>
+        <p className="text-[13px] leading-snug text-ink-2">{mission.id === 'wilderness' && c.truth ? c.scenario : mission.about}</p>
         <div className="mt-2 flex items-center justify-between text-xs text-ink-3">
           <span className="num">
             {c.lat.toFixed(4)}, {c.lon.toFixed(4)}
@@ -79,30 +81,8 @@ export function ControlPanel() {
         </div>
       </div>
 
-      <Section n={1} title="Subject">
-        <div className="grid grid-cols-2 gap-1">
-          {(Object.keys(PROFILES) as ProfileId[]).map((id) => (
-            <button key={id} className={`btn btn-sm ${profile === id ? 'btn-on' : ''}`} onClick={() => setProfile(id)} title={`median distance ${PROFILES[id].medianM} m`}>
-              {PROFILES[id].label}
-            </button>
-          ))}
-        </div>
-        <div className="mt-1.5 flex gap-1">
-          <ToolButton tool="lkp" title="Click the terrain to move the last known point">
-            <Icon.Pin size={14} /> Move LKP
-          </ToolButton>
-          <ToolButton tool="brushUp" title="Click to double the probability within 250 m">
-            <Icon.Brush size={14} /> Raise
-          </ToolButton>
-          <ToolButton tool="brushDown" title="Click to halve the probability within 250 m">
-            <Icon.Minus size={14} /> Lower
-          </ToolButton>
-        </div>
-        {prob && (
-          <p className="mt-2 text-[13px] text-ink-2">
-            The 3 km focus square holds <span className="num font-semibold text-ink">{(prob.segmentFraction * 100).toFixed(0)}%</span> of the probability.
-          </p>
-        )}
+      <Section n={1} title={SOURCE_TITLE[mission.source]}>
+        <SourceSection />
       </Section>
 
       <Section n={2} title="Scent">

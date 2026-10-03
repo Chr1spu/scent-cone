@@ -58,13 +58,31 @@ export function sourceSums(a: Float32Array, b: BlockIndex): Float32Array {
 }
 
 /** Detail cells a team can reach: slope ≤ 35°, not water, ≥ 20 m from a cliff. */
-export function deployableCells(ti: TerrainInfo, water: Uint8Array, cliff: Uint8Array): Uint8Array {
+export interface DeployableOptions {
+  maxSlopeDeg?: number;
+  /** 'waterAndShore': boats on water plus land within 40 m of it (water searches) */
+  mode?: 'land' | 'waterAndShore';
+}
+
+/** Detail cells a team can reach: slope limit, ≥ 20 m from a cliff, and not water (unless boats). */
+export function deployableCells(ti: TerrainInfo, water: Uint8Array, cliff: Uint8Array, opts: DeployableOptions = {}): Uint8Array {
   const { cols, rows, cellSize } = ti.meta;
+  const maxSlope = opts.maxSlopeDeg ?? HOTSPOTS.maxSlopeDeg;
   const cliffDist = distanceTransform(cliff, cols, rows, cellSize);
+  const isWater = (i: number) => water[i] === 1 || ti.landcover[i] === LC.water;
   const out = new Uint8Array(cols * rows);
+  if (opts.mode === 'waterAndShore') {
+    const wm = new Uint8Array(cols * rows);
+    for (let i = 0; i < wm.length; i++) wm[i] = isWater(i) ? 1 : 0;
+    const shoreDist = distanceTransform(wm, cols, rows, cellSize);
+    for (let i = 0; i < out.length; i++) {
+      const shore = !wm[i] && shoreDist[i] <= 40 && ti.slopeDeg[i] <= maxSlope && cliffDist[i] >= HOTSPOTS.cliffBufferM;
+      out[i] = wm[i] || shore ? 1 : 0;
+    }
+    return out;
+  }
   for (let i = 0; i < out.length; i++) {
-    out[i] =
-      ti.slopeDeg[i] <= HOTSPOTS.maxSlopeDeg && !water[i] && ti.landcover[i] !== LC.water && cliffDist[i] >= HOTSPOTS.cliffBufferM ? 1 : 0;
+    out[i] = ti.slopeDeg[i] <= maxSlope && !isWater(i) && cliffDist[i] >= HOTSPOTS.cliffBufferM ? 1 : 0;
   }
   return out;
 }
@@ -95,6 +113,12 @@ export interface DeployInput {
   deployable: Uint8Array;
   map: GridMap;
   teams: number;
+  /** chance a dog detects what it covers (default HOTSPOTS.dogPOD) */
+  pod?: number;
+  /** minimum spacing between teams in metres (default HOTSPOTS.suppressRadiusM) */
+  spacingM?: number;
+  /** a team must intercept at least this share of the probability to be placed */
+  minCover?: number;
 }
 
 /** Sources contributing at receiver r: ≥ share of its scent, top-N by strength. */
@@ -168,25 +192,27 @@ export function greedyDeploy(inp: DeployInput): Deployment[] {
         best = r;
       }
     }
-    if (best < 0) break;
+    // stop rather than place a team that would cover (almost) nothing
+    if (best < 0 || raw[best] < (inp.minCover ?? 0.01)) break;
     const cell = bestCell[best];
     const row = Math.floor(cell / cols);
     const col = cell - row * cols;
     const x = (col - map.ox) / map.inv;
     const y = -(row - map.oy) / map.inv;
     out.push({ team: team + 1, recv: best, cell, x, y, score: bestScore, coveredProb: raw[best], coveredSources: contribs[best].slice() });
-    const pod = HOTSPOTS.dogPOD * detRecv[best];
+    const pod = (inp.pod ?? HOTSPOTS.dogPOD) * detRecv[best];
     for (const src of contribs[best]) w[src] *= 1 - pod;
     // suppress receivers within 300 m
     const br = Math.floor(best / recvCols);
     const bc = best - br * recvCols;
-    const rad = Math.ceil(HOTSPOTS.suppressRadiusM / blockM);
+    const spacing = inp.spacingM ?? HOTSPOTS.suppressRadiusM;
+    const rad = Math.ceil(spacing / blockM);
     for (let dr = -rad; dr <= rad; dr++)
       for (let dc = -rad; dc <= rad; dc++) {
         const y2 = br + dr;
         const x2 = bc + dc;
         if (y2 < 0 || x2 < 0 || y2 >= recvRows || x2 >= recvCols) continue;
-        if (Math.hypot(dr, dc) * blockM <= HOTSPOTS.suppressRadiusM) suppressed[y2 * recvCols + x2] = 1;
+        if (Math.hypot(dr, dc) * blockM <= spacing) suppressed[y2 * recvCols + x2] = 1;
       }
   }
   return out;
@@ -199,4 +225,25 @@ export function greedyDeploy(inp: DeployInput): Deployment[] {
 export function snapshotScore(heatRecv: Float32Array, r: number, th: DetThresholds): number {
   const h = heatRecv[r];
   return smoothstep(th.lo, th.hi, h) + (0.1 * Math.min(h / (th.hi || 1), 3)) / 3;
+}
+
+/**
+ * Restrict deployable cells to within `reachM` of the core: the cells that together hold
+ * `share` of the probability (highest first).
+ */
+export function withinReach(deployable: Uint8Array, prob: Float32Array, cols: number, rows: number, cell: number, reachM: number, share = 0.9): Uint8Array {
+  const idx: number[] = [];
+  for (let i = 0; i < prob.length; i++) if (prob[i] > 0) idx.push(i);
+  idx.sort((a, b) => prob[b] - prob[a]);
+  const core = new Uint8Array(prob.length);
+  let acc = 0;
+  for (const i of idx) {
+    core[i] = 1;
+    acc += prob[i];
+    if (acc >= share) break;
+  }
+  const d = distanceTransform(core, cols, rows, cell);
+  const out = new Uint8Array(deployable.length);
+  for (let i = 0; i < out.length; i++) out[i] = deployable[i] && d[i] <= reachM ? 1 : 0;
+  return out;
 }

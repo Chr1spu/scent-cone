@@ -1,4 +1,5 @@
 import { ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, TRIANGULATION, type ProfileId } from '../config/modelParams';
+import { MISSIONS, MISSION_ORDER, type SourceKind } from '../config/missions';
 import { noseWindFactor, LC } from '../models/terrainInfo';
 import { Link } from '../router';
 import { PlumeDiagram, TriangulationDiagram, WindProfileDiagram } from './Diagrams';
@@ -12,10 +13,19 @@ const TOC = [
   ['detect', '4. Detectability'],
   ['deploy', '5. Deploying teams'],
   ['update', '6. Alerts and searched areas'],
+  ['missions', 'Kinds of search'],
   ['limits', 'Limitations'],
 ] as const;
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+const SOURCE_TEXT: Record<SourceKind, string> = {
+  lkp: 'distance from the last known point (profile)',
+  hides: 'the hides you place',
+  water: 'water near where they went in',
+  habitat: 'habitat you choose',
+  area: 'an area you draw',
+};
 
 export function Method() {
   return (
@@ -226,6 +236,48 @@ export function Method() {
             {pct(HOTSPOTS.dogPOD)} × the share of that source&apos;s scent that reached the searched area above the first threshold. Areas searched while detectability was under{' '}
             {SEARCH.recheckDet} are flagged for a recheck.
           </p>
+
+          <h2 id="missions">Kinds of search</h2>
+          <p>
+            Every kind of search runs the same wind and scent model. What changes is where the target can be, how long its scent lasts, how easily it lifts away, how likely a dog is to
+            detect it, and where teams can stand. Each also carries its own limits.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Kind</th>
+                <th>Where the target can be</th>
+                <th>Scent lasts</th>
+                <th>Lofting</th>
+                <th>Dog POD</th>
+                <th>Team spacing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MISSION_ORDER.map((m) => {
+                const x = MISSIONS[m];
+                return (
+                  <tr key={m}>
+                    <td className="font-medium">{x.label}</td>
+                    <td>{SOURCE_TEXT[x.source]}{x.tuning.lowGroundBias ? ', favouring low ground' : ''}</td>
+                    <td className="num">×{x.tuning.tauScale}</td>
+                    <td className="num">×{x.tuning.liftScale}</td>
+                    <td className="num">{pct(x.tuning.pod)}</td>
+                    <td className="num">
+                      {x.tuning.spacingM} m{x.tuning.deploy === 'waterAndShore' ? ', boats and shore' : ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <ul>
+            {MISSION_ORDER.map((m) => (
+              <li key={m}>
+                <strong>{MISSIONS[m].label}:</strong> {MISSIONS[m].caveat}
+              </li>
+            ))}
+          </ul>
 
           <h2 id="limits">Limitations</h2>
           <ul>

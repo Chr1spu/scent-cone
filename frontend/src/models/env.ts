@@ -1,6 +1,7 @@
 /** Time-varying environment: interpolated weather and sun position. */
 import * as SunCalc from 'suncalc';
 import { SCENT } from '../config/modelParams';
+import { TUNING } from './tuning';
 
 export interface WeatherHour {
   hour: number;
@@ -93,7 +94,7 @@ export function decayTau(env: Pick<Env, 'humidity' | 'temperature'>, sunlitHigh:
   const humidityFactor = clamp(0.5 + env.humidity / 100, 0.6, 1.4);
   const tempFactor = clamp(1.4 - (env.temperature - 10) / 40, 0.6, 1.4);
   const sunFactor = sunlitHigh ? SCENT.sunFactor : 1;
-  return SCENT.baseTauS * humidityFactor * tempFactor * sunFactor;
+  return SCENT.baseTauS * humidityFactor * tempFactor * sunFactor * TUNING.tauScale;
 }
 
 /** Human-readable scent conditions for the slider readout. */

@@ -8,6 +8,7 @@ import { toLocal } from '../geo/grid';
 import { toScene } from '../geo/heights';
 import { fmtTime } from '../state/controller';
 import { useStore } from '../state/store';
+import { MISSIONS } from '../config/missions';
 import { sectorCentroid, type SearchedSector as SectorShape } from '../models/searchUpdate';
 import { Beacon, DrapedLine, Label, MODEL_SCALE, circlePts } from './primitives';
 import { useModel } from './useModel';
@@ -27,6 +28,7 @@ function Tent() {
 
 function LkpMarker({ bundle }: { bundle: AreaBundle }) {
   const lkp = useStore((s) => s.lkp);
+  const mission = useStore((s) => s.mission);
   const glb = useModel('lkp_marker.glb');
   const p = toScene(bundle, lkp[0], lkp[1]);
   return (
@@ -37,14 +39,16 @@ function LkpMarker({ bundle }: { bundle: AreaBundle }) {
       </group>
       <Beacon position={p} color={COLORS.lkp} height={110} radius={18} />
       <Label position={[p[0], p[1] + 125 * VERT_EXAG, p[2]]}>
-        Last seen {fmtTime(bundle.config.missingAt)}
+        {MISSIONS[mission].lkpLabel}
+        {mission === 'wilderness' || mission === 'pet' ? ` ${fmtTime(bundle.config.missingAt)}` : ''}
       </Label>
     </group>
   );
 }
 
 function ChildMarker({ bundle }: { bundle: AreaBundle }) {
-  if (!bundle.config.truth) return null;
+  const mission = useStore((s) => s.mission);
+  if (!bundle.config.truth || mission !== 'wilderness') return null;
   return <ChildMarkerAt bundle={bundle} truthXY={[bundle.config.truth.x, bundle.config.truth.y]} />;
 }
 
@@ -139,7 +143,7 @@ function SearchDraftPreview({ bundle }: { bundle: AreaBundle }) {
   const tool = useStore((s) => s.tool);
   const draft = useStore((s) => s.searchDraft);
   const hover = useStore((s) => s.hover);
-  if (tool !== 'searched' || draft.shape !== 'polygon' || draft.pts.length === 0) return null;
+  if ((tool !== 'searched' && tool !== 'area') || draft.shape !== 'polygon' || draft.pts.length === 0) return null;
   const pts: [number, number][] = hover ? [...draft.pts, hover] : draft.pts;
   const first = toScene(bundle, draft.pts[0][0], draft.pts[0][1]);
   return (
@@ -178,10 +182,60 @@ function BrushCursor({ bundle }: { bundle: AreaBundle }) {
   const tool = useStore((s) => s.tool);
   const hover = useStore((s) => s.hover);
   const draft = useStore((s) => s.searchDraft);
-  const pts = useMemo(() => (hover ? circlePts(hover[0], hover[1], tool === 'searched' ? draft.radius : PROBABILITY.brushRadiusM, 48) : null), [hover, tool, draft.radius]);
-  const circleSearch = tool === 'searched' && draft.shape === 'circle';
+  const drawing = tool === 'searched' || tool === 'area';
+  const pts = useMemo(() => (hover ? circlePts(hover[0], hover[1], drawing ? draft.radius : PROBABILITY.brushRadiusM, 48) : null), [hover, drawing, draft.radius]);
+  const circleSearch = drawing && draft.shape === 'circle';
   if (!pts || !(tool === 'brushUp' || tool === 'brushDown' || circleSearch)) return null;
-  return <DrapedLine bundle={bundle} pts={pts} color={tool === 'brushDown' ? '#ff8a8a' : tool === 'searched' ? COLORS.searched : '#7ef0ff'} lift={5} />;
+  return <DrapedLine bundle={bundle} pts={pts} color={tool === 'brushDown' ? '#ff8a8a' : tool === 'area' ? COLORS.amber : tool === 'searched' ? COLORS.searched : '#7ef0ff'} lift={5} />;
+}
+
+/** Training hides: a person model with a label (only in the training mission). */
+function Hides({ bundle }: { bundle: AreaBundle }) {
+  const hides = useStore((s) => s.hides);
+  const mission = useStore((s) => s.mission);
+  const glb = useModel('child_marker.glb');
+  if (mission !== 'training') return null;
+  return (
+    <group>
+      {hides.map(([x, y], i) => {
+        const p = toScene(bundle, x, y);
+        return (
+          <group key={i}>
+            <group position={p} scale={MODEL_SCALE}>
+              {glb ? (
+                <primitive object={glb.clone(true)} />
+              ) : (
+                <mesh position={[0, 0.7, 0]}>
+                  <capsuleGeometry args={[0.25, 0.9, 4, 10]} />
+                  <meshStandardMaterial color={COLORS.child} />
+                </mesh>
+              )}
+            </group>
+            <Beacon position={p} color={COLORS.child} height={90} radius={16} />
+            <Label position={[p[0], p[1] + 105 * VERT_EXAG, p[2]]} tone="amber">
+              Hide {i + 1}
+            </Label>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+/** The drawn search area (evidence, disaster). */
+function AreaOutline({ bundle }: { bundle: AreaBundle }) {
+  const area = useStore((s) => s.area);
+  const mission = useStore((s) => s.mission);
+  if (!area || MISSIONS[mission].source !== 'area') return null;
+  const [cx, cy] = sectorCentroid(area);
+  return (
+    <group>
+      <DrapedLine bundle={bundle} pts={outline(area)} color={COLORS.amber} lift={5} />
+      <Label position={toScene(bundle, cx, cy, 30)} tone="amber">
+        {mission === 'disaster' ? 'Debris field' : 'Search area'}
+      </Label>
+    </group>
+  );
 }
 
 export function Markers({ bundle }: { bundle: AreaBundle }) {
@@ -189,6 +243,8 @@ export function Markers({ bundle }: { bundle: AreaBundle }) {
     <group>
       <LkpMarker bundle={bundle} />
       <ChildMarker bundle={bundle} />
+      <Hides bundle={bundle} />
+      <AreaOutline bundle={bundle} />
       <SearchedSectors bundle={bundle} />
       <SearchDraftPreview bundle={bundle} />
       <Suggestions bundle={bundle} />

@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import type { AreaBundle } from '../api/types';
 import { SCENT } from '../config/modelParams';
 import { useStore } from '../state/store';
+import { MISSIONS } from '../config/missions';
 import type { ParticleMsg, ParticleReply } from '../workers/particles.worker';
 
 const vert = /* glsl */ `
@@ -39,6 +40,7 @@ export function ScentParticles({ bundle }: { bundle: AreaBundle }) {
   const release = useStore((s) => s.scentRelease);
   const prob = useStore((s) => s.prob);
   const windVersion = useStore((s) => s.windVersion);
+  const mission = useStore((s) => s.mission);
   const n = SCENT.visibleParticles;
   const geo = useMemo(() => {
     const g = new THREE.BufferGeometry();
@@ -100,6 +102,13 @@ export function ScentParticles({ bundle }: { bundle: AreaBundle }) {
       spare.current = { pos: new Float32Array(n * 3), strength: new Float32Array(n) };
     };
   }, [bundle, geo, n]);
+
+  useEffect(() => {
+    const w = worker.current;
+    if (!w) return;
+    const t = MISSIONS[mission].tuning;
+    w.postMessage({ type: 'tuning', tuning: { tauScale: t.tauScale, liftScale: t.liftScale } } satisfies ParticleMsg);
+  }, [mission, bundle]);
 
   useEffect(() => {
     const w = worker.current;

@@ -5,7 +5,7 @@ import type { AreaBundle, GridLevel } from '../api/types';
 import { CONTOUR_DETAIL_M, CONTOUR_OVERVIEW_M, VERT_EXAG } from '../config/constants';
 import { localBounds, type Frame } from '../geo/grid';
 import { sunAt } from '../models/env';
-import { addAlert, brush, searchClick, setLkp } from '../state/controller';
+import { addAlert, addHide, brush, searchClick, setLkp } from '../state/controller';
 import { useStore } from '../state/store';
 import { byteTexture, createTerrainMaterial } from './ContourMaterial';
 
@@ -178,6 +178,14 @@ export function Terrain({ bundle }: { bundle: AreaBundle }) {
       case 'alert':
         if (!inDetail) return s.toast('Alerts must be inside the focus segment', 'warn');
         addAlert(lx, ly);
+        break;
+      case 'hide':
+        if (!inDetail) return s.toast('Hides must be inside the focus square', 'warn');
+        addHide(lx, ly);
+        break;
+      case 'area':
+        if (!inDetail) return s.toast('The search area must be inside the focus square', 'warn');
+        searchClick(lx, ly);
         break;
       case 'searched':
         if (!inDetail) return s.toast('Searched sectors must be inside the focus segment', 'warn');

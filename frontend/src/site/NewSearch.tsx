@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { backendHealthy } from '../api/loader';
 import { apiBase, savedServer, setServer } from '../api/server';
 import { PROFILES, type ProfileId } from '../config/modelParams';
+import { MISSIONS, MISSION_ORDER, isMission, type MissionId } from '../config/missions';
 import { Link, navigate } from '../router';
 import { Icon } from '../ui/icons';
 import { parseLatLon, reverseName, searchPlaces, type Place } from './geocode';
@@ -73,7 +74,18 @@ export function NewSearch() {
   const [now, setNow] = useState(true);
   const [date, setDate] = useState(todayLocal());
   const [start, setStart] = useState(14);
+  const [mission, setMissionId] = useState<MissionId>(() => {
+    const m = new URLSearchParams(location.search).get('mission');
+    return isMission(m) ? m : 'wilderness';
+  });
   const [profile, setProfile] = useState<ProfileId>('child712');
+  const ms = MISSIONS[mission];
+  const chooseMission = (m: MissionId) => {
+    setMissionId(m);
+    const def = MISSIONS[m];
+    if (def.profiles && !def.profiles.includes(profile)) setProfile(def.defaultProfile ?? def.profiles[0]);
+    setTeams(def.teams);
+  };
   const [teams, setTeams] = useState(3);
   const [server, setServerState] = useState<ServerState>('checking');
   const [wn, setWn] = useState(false);
@@ -126,7 +138,7 @@ export function NewSearch() {
   };
 
   const plannerUrl = point
-    ? `/planner?lat=${point.lat.toFixed(5)}&lon=${point.lon.toFixed(5)}${now ? '&now=1' : `&date=${date}&start=${start}`}&profile=${profile}&teams=${teams}`
+    ? `/planner?lat=${point.lat.toFixed(5)}&lon=${point.lon.toFixed(5)}${now ? '&now=1' : `&date=${date}&start=${start}`}&mission=${mission}${ms.profiles ? `&profile=${profile}` : ''}&teams=${teams}`
     : null;
   const ready = !!plannerUrl && server === 'ok';
 
@@ -137,10 +149,28 @@ export function NewSearch() {
         <div className="order-2 overflow-y-auto border-r border-rule md:order-1">
           <div className="border-b border-rule px-5 py-5">
             <h1 className="font-display text-3xl font-bold text-ink">Plan a search</h1>
-            <p className="mt-1 text-[15px] leading-snug text-ink-2">Set the last known point, the time window and who is missing. The planner opens with this area loaded.</p>
+            <p className="mt-1 text-[15px] leading-snug text-ink-2">Choose the kind of search, the place and the time window. The planner opens with this area loaded.</p>
           </div>
 
-          <Step n={1} title="Last known point">
+          <section className="border-b border-rule px-5 py-5">
+            <h2 className="font-display text-xl font-bold text-ink">Kind of search</h2>
+            <div className="mt-3 grid grid-cols-2 gap-1.5">
+              {MISSION_ORDER.map((m) => (
+                <button
+                  key={m}
+                  className={`rounded border px-2.5 py-2 text-left ${mission === m ? 'border-ink bg-white' : 'border-rule hover:border-ink-3'}`}
+                  onClick={() => chooseMission(m)}
+                  aria-pressed={mission === m}
+                >
+                  <div className="text-[13px] font-semibold leading-tight">{MISSIONS[m].label}</div>
+                  <div className="mt-0.5 text-[11px] leading-snug text-ink-3">{MISSIONS[m].short}</div>
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs leading-snug text-ink-2">{ms.about}</p>
+          </section>
+
+          <Step n={1} title={ms.source === 'lkp' ? 'Last known point' : ms.source === 'water' ? 'Where they went into the water' : ms.source === 'hides' ? 'Training ground' : 'Search location'}>
             <form onSubmit={onSearch} className="flex gap-1.5">
               <input className="field" placeholder="Trailhead, campground, town, or 42.16, -74.20" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search for a place" />
               <button className="btn shrink-0" type="submit" disabled={searching} aria-label="Search">
@@ -228,9 +258,17 @@ export function NewSearch() {
             <p className="mt-2 text-xs leading-snug text-ink-3">Today and the next two days use NOAA&apos;s HRRR forecast through WindNinja where available. Past dates use archived hourly weather.</p>
           </Step>
 
-          <Step n={3} title="Subject">
+          <Step n={3} title={ms.profiles ? 'Subject' : 'Teams'}>
+            {!ms.profiles && (
+              <p className="text-[13px] leading-snug text-ink-2">
+                {ms.source === 'hides' && 'Place the hides in the planner; the first one starts where you clicked.'}
+                {ms.source === 'area' && 'Draw the exact area in the planner; it starts as a circle around your point.'}
+                {ms.source === 'habitat' && 'Choose the habitat (land cover, slope, closeness to streams) in the planner.'}
+                {ms.source === 'water' && 'Probability goes on the water nearest your point. Pick a point on or beside a lake or river.'}
+              </p>
+            )}
             <div className="grid gap-1.5">
-              {(Object.keys(PROFILES) as ProfileId[]).map((id) => (
+              {(ms.profiles ?? []).map((id) => (
                 <label key={id} className={`flex cursor-pointer items-center justify-between rounded border px-3 py-2 text-sm ${profile === id ? 'border-ink bg-white' : 'border-rule hover:border-ink-3'}`}>
                   <span className="flex items-center gap-2">
                     <input type="radio" name="profile" checked={profile === id} onChange={() => setProfile(id)} className="accent-sar" />

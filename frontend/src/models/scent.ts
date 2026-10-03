@@ -6,6 +6,7 @@ import { ENSEMBLE, SCENT } from '../config/modelParams';
 import { decayTau, envAt, type Place, type Weather } from './env';
 import { Rng } from './rng';
 import { sunlitMask, type TerrainInfo } from './terrainInfo';
+import { TUNING } from './tuning';
 import { IDENTITY_MEMBER, makeMember, perturb, sampleUVFrac, timeSlot, type EnsembleMember, type TimeSlot, type WindField } from './wind';
 
 export interface Sources {
@@ -123,7 +124,7 @@ export function makeStepEnv(
   neutral = false,
 ): StepEnv {
   if (neutral) {
-    const d = Math.exp(-dt / SCENT.baseTauS);
+    const d = Math.exp(-dt / (SCENT.baseTauS * TUNING.tauScale));
     return { slot: timeSlot(field, t), member, sunlit: sunlitBuf ?? new Uint8Array(ti.elev.length), sunHigh: false, sunUp: false, decayShade: d, decaySun: d, neutral };
   }
   const env = envAt(place, weather, t);
@@ -202,7 +203,7 @@ export function step(sim: Sim, field: WindField, se: StepEnv, dt: number, acc?: 
     if (se.neutral) s *= se.decayShade;
     else {
       s *= sunlit[cell] && se.sunHigh ? se.decaySun : se.decayShade;
-      if (se.sunUp && sunlit[cell] && speed2m < SCENT.liftWind) s *= 1 - SCENT.liftPerS * dt;
+      if (se.sunUp && sunlit[cell] && speed2m < SCENT.liftWind) s *= 1 - SCENT.liftPerS * TUNING.liftScale * dt;
     }
     A[i] += dt;
     fc = x * inv + ox;

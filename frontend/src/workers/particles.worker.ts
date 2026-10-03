@@ -13,10 +13,12 @@ import type { Place, Weather } from '../models/env';
 import { createSim, makeStepEnv, step, type Sim, type StepEnv } from '../models/scent';
 import { buildTerrainInfo, type TerrainInfo } from '../models/terrainInfo';
 import { timeSlot, type WindField } from '../models/wind';
+import { setTuning } from '../models/tuning';
 
 export type ParticleMsg =
   | { type: 'init'; frame: Frame; detail: GridLevel; overview: GridLevel; weather: Weather; place: Place; wind: WindField; n: number }
   | { type: 'setWind'; wind: WindField }
+  | { type: 'tuning'; tuning: { tauScale: number; liftScale: number } }
   | { type: 'release'; prob: Float32Array; seed: number; t: number }
   | { type: 'stop' }
   | { type: 'tick'; t: number; pos: Float32Array; strength: Float32Array };
@@ -63,6 +65,10 @@ ctx.onmessage = (ev: MessageEvent<ParticleMsg>) => {
         const se = makeStepEnv(ti, wind, place, weather, m.t, PREWARM_DT, undefined, sunBuf ?? undefined);
         for (let k = 0; k < PREWARM_S / PREWARM_DT; k++) step(sim, wind, se, PREWARM_DT);
       }
+      break;
+    case 'tuning':
+      setTuning(m.tuning);
+      env = null;
       break;
     case 'stop':
       sim = null;

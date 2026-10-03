@@ -5,6 +5,7 @@ import type { Feature2D } from '../models/probability';
 import type { WindField } from '../models/wind';
 import type { Frame } from '../geo/grid';
 import type { SearchedSector } from '../models/searchUpdate';
+import type { HabitatSpec, MissionId } from '../config/missions';
 
 export interface InitMsg {
   frame: Frame;
@@ -15,6 +16,14 @@ export interface InitMsg {
   place: Place;
   wind: WindField;
 }
+
+/** Where the target can be, for the current mission. */
+export type SourceSpec =
+  | { kind: 'lkp' }
+  | { kind: 'hides'; hides: [number, number][] }
+  | { kind: 'water' }
+  | { kind: 'habitat'; habitat: HabitatSpec }
+  | { kind: 'area'; area: SearchedSector | null };
 
 export interface ProbResult {
   overview: Float32Array;
@@ -70,6 +79,8 @@ export type Request =
   | { type: 'alert'; x: number; y: number; t: number }
   | { type: 'searched'; sector: SearchedSector; t0: number; t1: number }
   | { type: 'resetSearch' }
+  | { type: 'mission'; mission: MissionId; source: SourceSpec }
+  | { type: 'source'; source: SourceSpec }
   | { type: 'suggestAlerts'; truth: [number, number]; times: number[] };
 
 export type Envelope = { id: number; req: Request };

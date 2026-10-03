@@ -3,6 +3,7 @@ import type { ProfileId } from '../config/modelParams';
 import type { AreaBundle } from '../api/types';
 import type { WindField } from '../models/wind';
 import type { SearchedSector as SectorShape } from '../models/searchUpdate';
+import { DEFAULT_HABITAT, type HabitatSpec, type MissionId } from '../config/missions';
 import type { DeploymentOut, HeatResult, ProbResult } from '../workers/protocol';
 
 export type LayerId =
@@ -34,7 +35,7 @@ export const LAYER_LABELS: Record<LayerId, string> = {
   searched: 'Searched sectors',
 };
 
-export type Tool = 'none' | 'lkp' | 'alert' | 'searched' | 'brushUp' | 'brushDown' | 'focus';
+export type Tool = 'none' | 'lkp' | 'alert' | 'searched' | 'brushUp' | 'brushDown' | 'focus' | 'hide' | 'area';
 
 export interface Alert {
   id: number;
@@ -95,6 +96,14 @@ export interface State {
   windVersion: number;
   onsiteWind: OnsiteWind | null;
   profile: ProfileId;
+  mission: MissionId;
+  /** training hides (local metres) */
+  hides: [number, number][];
+  /** drawn search area (evidence, disaster) */
+  area: SectorShape | null;
+  habitat: HabitatSpec;
+  /** bumped on mission change so workers re-read the scent tuning */
+  missionVersion: number;
   /** LKP in local metres */
   lkp: [number, number];
   time: number;
@@ -147,6 +156,11 @@ export const useStore = create<State>((set, get) => ({
   windVersion: 0,
   onsiteWind: null,
   profile: 'child712',
+  mission: 'wilderness',
+  hides: [],
+  area: null,
+  habitat: DEFAULT_HABITAT,
+  missionVersion: 0,
   lkp: [0, 0],
   time: 16,
   playing: false,

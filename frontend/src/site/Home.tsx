@@ -1,4 +1,5 @@
 import { Link } from '../router';
+import { MISSIONS, MISSION_ORDER } from '../config/missions';
 import { IdeaDiagram } from './Diagrams';
 import { Figure, SitePage, img } from './SiteLayout';
 
@@ -87,6 +88,24 @@ export function Home() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 pt-16 md:px-6">
+        <p className="eyebrow">Beyond lost hikers</p>
+        <h2 className="mt-2 font-display text-4xl font-bold text-ink">Eight kinds of dog search.</h2>
+        <p className="mt-3 max-w-2xl font-serif text-[17px] leading-relaxed text-ink-2">
+          The same wind and scent engine plans any search where a dog works the air. Each kind changes where the target can be, how its scent behaves, and where teams can stand.
+        </p>
+        <div className="mt-8 grid gap-px overflow-hidden rounded border border-rule bg-rule sm:grid-cols-2 lg:grid-cols-4">
+          {MISSION_ORDER.map((m, i) => (
+            <Link key={m} to={`/planner?demo&mission=${m}`} className="group bg-paper p-4 text-ink no-underline hover:bg-white hover:text-ink">
+              <div className="num text-xs text-sar-dark">{String(i + 1).padStart(2, '0')}</div>
+              <div className="mt-1 font-display text-xl font-bold leading-tight">{MISSIONS[m].label}</div>
+              <p className="mt-1 text-[14px] leading-snug text-ink-2">{MISSIONS[m].short}</p>
+              <span className="mt-2 inline-block text-[13px] text-sar-dark underline-offset-2 group-hover:underline">Try it in the demo</span>
+            </Link>
+          ))}
         </div>
       </section>
 

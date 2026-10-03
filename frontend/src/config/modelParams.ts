@@ -3,7 +3,7 @@
  * validated scent physics; the UI labels them as such.
  */
 
-export type ProfileId = 'child16' | 'child712' | 'hiker' | 'dementia';
+export type ProfileId = 'child16' | 'child712' | 'hiker' | 'dementia' | 'catIndoor' | 'catOutdoor' | 'dogSmall' | 'dogLarge';
 
 export interface ProfileParams {
   label: string;
@@ -14,6 +14,8 @@ export interface ProfileParams {
   /** linear-feature attraction amplitude and length scale (m) */
   featureA: number;
   featureL: number;
+  /** optional preference by land-cover class (1 water … 6 wetland); missing classes = 1 */
+  landcoverWeight?: Partial<Record<number, number>>;
   note: string;
 }
 
@@ -22,6 +24,12 @@ export const PROFILES: Record<ProfileId, ProfileParams> = {
   child712: { label: 'Child (7–12)', medianM: 1000, spread: 0.9, featureA: 1, featureL: 150, note: 'placeholder, tune' },
   hiker: { label: 'Hiker', medianM: 3100, spread: 0.8, featureA: 3, featureL: 150, note: 'temperate mountains' },
   dementia: { label: 'Person with dementia', medianM: 1100, spread: 0.9, featureA: 1, featureL: 150, note: 'urban median; wilderness placeholder' },
+  // lost pets: cats hide in cover close by (Huang et al. 2018: indoor-only cats median 39 m,
+  // outdoor-access cats 315 m); dog figures are placeholders, dogs follow roads and trails
+  catIndoor: { label: 'Cat (indoor-only)', medianM: 50, spread: 1.0, featureA: 0, featureL: 100, landcoverWeight: { 2: 0.5, 3: 1.6, 4: 1.3, 5: 1.4 }, note: 'Huang et al. 2018' },
+  catOutdoor: { label: 'Cat (goes outdoors)', medianM: 315, spread: 1.0, featureA: 0, featureL: 100, landcoverWeight: { 2: 0.6, 3: 1.5, 4: 1.3, 5: 1.3 }, note: 'Huang et al. 2018' },
+  dogSmall: { label: 'Dog (small)', medianM: 800, spread: 0.9, featureA: 2, featureL: 120, note: 'placeholder, tune' },
+  dogLarge: { label: 'Dog (large)', medianM: 1600, spread: 0.9, featureA: 2.5, featureL: 150, note: 'placeholder, tune' },
 };
 
 export const PROBABILITY = {

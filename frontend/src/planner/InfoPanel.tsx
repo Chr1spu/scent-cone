@@ -4,6 +4,7 @@ import { Link } from '../router';
 import { FEATURE_COLORS } from '../scene/FeatureLines';
 import { fmtTime } from '../state/controller';
 import { useStore } from '../state/store';
+import { MISSIONS } from '../config/missions';
 
 type Tab = 'plan' | 'legend' | 'notes';
 
@@ -114,10 +115,21 @@ function Legend() {
 
 function Notes() {
   const bundle = useStore((s) => s.bundle);
+  const mission = useStore((s) => MISSIONS[s.mission]);
   const windSource = useStore((s) => s.windSource);
   const sources = Object.values(bundle?.config.sources ?? {}).filter((v, i, a) => a.indexOf(v) === i);
   return (
     <div className="space-y-2 text-[13px] leading-relaxed text-ink-2">
+      <div className="rounded-sm border border-rule bg-white p-2">
+        <div className="font-semibold text-ink">{mission.label}</div>
+        <p className="mt-0.5">{mission.about}</p>
+        <ol className="mt-1.5 list-decimal space-y-0.5 pl-4">
+          {mission.steps.map((st) => (
+            <li key={st}>{st}</li>
+          ))}
+        </ol>
+        <p className="mt-1.5 text-xs text-sar-dark">Limit: {mission.caveat}</p>
+      </div>
       <p>The scent model is a set of simplified rules, not a validated simulation. Use it alongside experienced handlers.</p>
       <ul className="list-disc space-y-1 pl-4">
         <li>Wind: {windSource === 'windninja' ? 'WindNinja, terrain-adjusted, hourly' : 'forecast plus a slope-wind rule'}; scent moves with it at 0.6 m.</li>

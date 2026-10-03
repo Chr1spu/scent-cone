@@ -4,13 +4,17 @@
  * alert back-tracing and negative search updates. Holds the search state (prior, likelihood).
  */
 import { ENSEMBLE, HOTSPOTS, PROBABILITY, PROFILES } from '../config/modelParams';
+import { MISSIONS, type MissionId } from '../config/missions';
+import { aggregateToOverview, areaPrior, habitatPrior, hidesPrior, waterPrior } from '../models/sources';
+import { setTuning } from '../models/tuning';
 import { cellCenterLocal, gridMap, insideGrid, localBounds, type GridMap } from '../geo/grid';
-import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, snapshotScore, sourceSums, type DetThresholds } from '../models/hotspots';
+import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, snapshotScore, sourceSums, withinReach, type DetThresholds } from '../models/hotspots';
 import {
   applyBrush,
   barrierFactor,
   buildStaticLayers,
   computeProbability,
+  distanceTransform,
   normalize,
   overviewPosterior,
   rasterizeLines,
@@ -25,7 +29,7 @@ import { searchUpdate, type SearchedSector } from '../models/searchUpdate';
 import { buildTerrainInfo, LC, type TerrainInfo } from '../models/terrainInfo';
 import { alertLikelihood, argmax, backtrace, driftPoint } from '../models/triangulation';
 import { sampleWind, type WindField } from '../models/wind';
-import type { AlertResult, DeploymentOut, Envelope, HeatResult, InitMsg, ProbResult, Reply, SearchResult } from './protocol';
+import type { AlertResult, DeploymentOut, Envelope, HeatResult, InitMsg, ProbResult, Reply, SearchResult, SourceSpec } from './protocol';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -53,6 +57,13 @@ interface State {
   profile: keyof typeof PROFILES;
   lkp: [number, number];
   warmed: boolean;
+  mission: MissionId;
+  source: SourceSpec;
+  /** prior computed directly on the detail grid (all sources except 'lkp') */
+  detailPrior: Float32Array | null;
+  cliff: Uint8Array;
+  /** distance to the nearest stream on the detail grid (habitat surveys) */
+  streamDist: Float32Array;
 }
 
 interface Ensemble {
@@ -88,6 +99,9 @@ function init(m: InitMsg) {
   rasterizeLines(m.features.filter((f) => f.kind === 'river'), ti.map, detailWater);
   const cliff = new Uint8Array(nD);
   rasterizeLines(m.features.filter((f) => f.kind === 'cliff'), ti.map, cliff);
+  const streams = new Uint8Array(nD);
+  rasterizeLines(m.features.filter((f) => f.kind === 'stream' || f.kind === 'river'), ti.map, streams);
+  const streamDist = distanceTransform(streams, m.detail.meta.cols, m.detail.meta.rows, m.detail.meta.cellSize);
   S = {
     init: m,
     ovMap,
@@ -112,7 +126,13 @@ function init(m: InitMsg) {
     profile: 'child712',
     lkp: [0, 0],
     warmed: false,
+    mission: 'wilderness',
+    source: { kind: 'lkp' },
+    detailPrior: null,
+    cliff,
+    streamDist,
   };
+  setTuning(MISSIONS.wilderness.tuning);
   // helper workers run ensemble members in parallel (inline fallback if unavailable)
   pool?.terminate();
   pool = null;
@@ -126,8 +146,34 @@ function init(m: InitMsg) {
   return { ok: true, helpers: pool?.size ?? 0 };
 }
 
+/** A friendly reason when a source has nowhere to put probability. */
+class SourceError extends Error {}
+
 function recomputePrior() {
   const s = st();
+  const mission = MISSIONS[s.mission];
+  const src = s.source;
+  if (src.kind !== 'lkp') {
+    const m = s.ti.map;
+    let p: Float32Array | null = null;
+    if (src.kind === 'hides') p = hidesPrior(m, src.hides);
+    else if (src.kind === 'area') p = src.area ? areaPrior(m, src.area, s.ti.elev, s.ti.slopeDeg, s.detailWater, mission.tuning.lowGroundBias) : null;
+    else if (src.kind === 'water') p = waterPrior(m, s.detailWater, s.lkp);
+    else if (src.kind === 'habitat') p = habitatPrior(s.ti.landcover, s.ti.slopeDeg, s.streamDist, src.habitat);
+    if (!p) {
+      const why: Record<string, string> = {
+        hides: 'Place at least one hide.',
+        area: 'Draw the search area first.',
+        water: 'There is no water in the focus square. Move the focus square onto a lake or river.',
+        habitat: 'No ground in the focus square matches this habitat. Add land-cover types or relax the limits.',
+      };
+      throw new SourceError(why[src.kind]);
+    }
+    s.detailPrior = p;
+    s.prior = aggregateToOverview(p, s.ti.map, s.ovMap);
+    return;
+  }
+  s.detailPrior = null;
   const key = `${s.lkp[0].toFixed(0)},${s.lkp[1].toFixed(0)}`;
   let barrier = s.barrierCache.get(key);
   if (!barrier) {
@@ -142,6 +188,7 @@ function recomputePrior() {
     lkp: s.lkp,
     profile: PROFILES[s.profile],
     edits: s.edits,
+    lowGroundBias: mission.tuning.lowGroundBias,
   });
 }
 
@@ -149,18 +196,45 @@ function recomputePosterior(): ProbResult {
   const s = st();
   if (!s.prior) recomputePrior();
   const prior = s.prior!;
-  const ovPost = overviewPosterior(prior, s.ovMap, s.ti.map, s.L, s.outside);
-  const { prob } = resampleToDetail(prior, s.ovMap, s.ti.map, s.detailWater);
-  for (let i = 0; i < prob.length; i++) prob[i] *= s.L[i];
-  normalize(prob);
-  const b = localBounds(s.init.detail.meta, s.init.frame);
-  s.segmentFraction = sumInside(ovPost, s.ovMap, b);
+  let ovPost: Float32Array;
+  let prob: Float32Array;
+  if (s.detailPrior) {
+    // detail-grid sources: everything is inside the focus square
+    prob = s.detailPrior.slice();
+    for (let i = 0; i < prob.length; i++) prob[i] *= s.L[i];
+    normalize(prob);
+    ovPost = aggregateToOverview(prob, s.ti.map, s.ovMap);
+    s.segmentFraction = 1;
+  } else {
+    ovPost = overviewPosterior(prior, s.ovMap, s.ti.map, s.L, s.outside);
+    prob = resampleToDetail(prior, s.ovMap, s.ti.map, s.detailWater).prob;
+    for (let i = 0; i < prob.length; i++) prob[i] *= s.L[i];
+    normalize(prob);
+    const b = localBounds(s.init.detail.meta, s.init.frame);
+    s.segmentFraction = sumInside(ovPost, s.ovMap, b);
+  }
   s.ovPost = ovPost;
   s.detailPost = prob;
   s.probVersion++;
   s.last = null;
   s.snapshots = null;
   return { overview: ovPost.slice(), detail: prob.slice(), segmentFraction: s.segmentFraction, peak: cellCenterLocal(s.ti.map, argmax(prob)) };
+}
+
+/** Switch mission: scent tuning (here, helpers), where teams can stand, the source model. */
+function setMission(mission: MissionId, source: SourceSpec): ProbResult {
+  const s = st();
+  const t = MISSIONS[mission].tuning;
+  s.mission = mission;
+  setTuning(t);
+  pool?.setTuning(t);
+  s.deployable = deployableCells(s.ti, s.detailWater, s.cliff, { maxSlopeDeg: t.maxSlopeDeg, mode: t.deploy });
+  s.L.fill(1);
+  s.outside = 1;
+  s.source = source;
+  s.prior = null;
+  recomputePrior();
+  return recomputePosterior();
 }
 
 /**
@@ -271,13 +345,16 @@ async function deploy(t: number, teams: number, report: (f: number, l: string) =
   const e = await ensembleAt(t, (f, l) => report(f * 0.55, l));
   report(0.56, 'Greedy deployment');
   const detRecv = detectability(e.heatRecv, e.thRecv);
+  const tune = MISSIONS[s.mission].tuning;
   const deps = greedyDeploy({
+    pod: tune.pod,
+    spacingM: tune.spacingM,
     contrib: e.contrib,
     blocks: s.blocks,
     detRecv,
     heat: e.heat,
     q: sourceSums(s.detailPost!, s.blocks),
-    deployable: s.deployable,
+    deployable: tune.reachM === null ? s.deployable : withinReach(s.deployable, s.detailPost!, s.ti.meta.cols, s.ti.meta.rows, s.ti.meta.cellSize, tune.reachM),
     map: s.ti.map,
     teams,
   });
@@ -330,7 +407,7 @@ async function searched(sector: SearchedSector, t0: number, t1: number, report: 
   const s = st();
   const windowMin = Math.max(15, Math.round((t1 - t0) * 60));
   const e = await ensembleAt(t1, (f, l) => report(f * 0.9, l), windowMin);
-  const r = searchUpdate({ sector, contrib: e.contrib, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map });
+  const r = searchUpdate({ sector, contrib: e.contrib, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map, pod: MISSIONS[s.mission].tuning.pod });
   for (let i = 0; i < s.L.length; i++) s.L[i] *= r.factor[i];
   return { meanDet: r.meanDet, recheck: r.recheck, prob: recomputePosterior() };
 }
@@ -445,6 +522,17 @@ async function handle({ id, req }: Envelope): Promise<void> {
         s.L.fill(1);
         s.outside = 1;
         s.edits.fill(1);
+        recomputePrior();
+        result = recomputePosterior();
+        break;
+      }
+      case 'mission':
+        result = setMission(req.mission, req.source);
+        break;
+      case 'source': {
+        const s = st();
+        s.source = req.source;
+        s.prior = null;
         recomputePrior();
         result = recomputePosterior();
         break;

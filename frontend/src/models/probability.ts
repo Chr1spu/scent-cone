@@ -3,7 +3,7 @@
  * distance prior (log-normal) × linear features × barriers × slope × (water = 0), plus brush edits.
  */
 import { PROBABILITY, type ProfileParams } from '../config/modelParams';
-import { cellAt, cellCenterLocal, slopeDegrees, type GridMap, type GridMeta } from '../geo/grid';
+import { boxBlur, cellAt, cellCenterLocal, slopeDegrees, type GridMap, type GridMeta } from '../geo/grid';
 import { LC } from './terrainInfo';
 
 export type FeatureKind = 'trail' | 'road' | 'stream' | 'river' | 'lake' | 'cliff';
@@ -25,6 +25,9 @@ export interface StaticLayers {
   /** cells that are costly to cross (water or cliff) */
   barrier: Uint8Array;
   slopeDeg: Float32Array;
+  /** topographic position: mean elevation within ~300 m minus own elevation (m); > 0 in valleys */
+  tpi: Float32Array;
+  landcover: Uint8Array;
 }
 
 // ---------------------------------------------------------------- rasterisation
@@ -123,7 +126,11 @@ export function buildStaticLayers(meta: GridMeta, m: GridMap, elev: Float32Array
   rasterizeLines(feats.filter((f) => f.kind === 'river'), m, water);
   const barrier = water.slice();
   rasterizeLines(feats.filter((f) => f.kind === 'cliff'), m, barrier);
-  return { featureDist, water, barrier, slopeDeg: slopeDegrees(elev, meta.cols, meta.rows, meta.cellSize) };
+  const radius = Math.max(1, Math.round(150 / meta.cellSize));
+  const mean = boxBlur(boxBlur(elev, meta.cols, meta.rows, radius), meta.cols, meta.rows, radius);
+  const tpi = new Float32Array(n);
+  for (let i = 0; i < n; i++) tpi[i] = mean[i] - elev[i];
+  return { featureDist, water, barrier, slopeDeg: slopeDegrees(elev, meta.cols, meta.rows, meta.cellSize), tpi, landcover };
 }
 
 // ---------------------------------------------------------------- barriers (cost-distance)
@@ -252,10 +259,14 @@ export interface ProbabilityInput {
   profile: ProfileParams;
   /** optional multiplicative brush edits, same grid */
   edits?: Float32Array;
+  /** weight low ground: × e^(bias · clamp(TPI / 40 m, ±1.5)) (cadaver, debris) */
+  lowGroundBias?: number;
 }
 
 export function computeProbability(inp: ProbabilityInput): Float32Array {
   const { meta, map, layers, barrier, lkp, profile, edits } = inp;
+  const bias = inp.lowGroundBias ?? 0;
+  const lcw = profile.landcoverWeight;
   const n = meta.cols * meta.rows;
   const p = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -267,6 +278,8 @@ export function computeProbability(inp: ProbabilityInput): Float32Array {
     w *= barrier[i];
     w *= Math.exp(-layers.slopeDeg[i] / PROBABILITY.slopeScaleDeg);
     if (edits) w *= edits[i];
+    if (lcw) w *= lcw[layers.landcover[i]] ?? 1;
+    if (bias) w *= Math.exp(bias * Math.max(-1.5, Math.min(1.5, layers.tpi[i] / 40)));
     p[i] = w;
   }
   return normalize(p);

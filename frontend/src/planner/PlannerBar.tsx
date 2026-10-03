@@ -1,4 +1,5 @@
-import { setView, setWindSource } from '../state/controller';
+import { setMission, setView, setWindSource } from '../state/controller';
+import { MISSIONS, MISSION_ORDER, type MissionId } from '../config/missions';
 import { useStore } from '../state/store';
 import { Link } from '../router';
 import { Icon, Logo } from '../ui/icons';
@@ -33,6 +34,29 @@ export function PlannerBar() {
   const set = useStore((s) => s.set);
   const mobile = useIsMobile();
   const c = bundle?.config;
+  const mission = useStore((s) => s.mission);
+  const pickMission = (m: MissionId) => {
+    // keep the mission in the address so links and reloads keep it
+    const q = new URLSearchParams(location.search);
+    q.set('mission', m);
+    history.replaceState(null, '', `${location.pathname}?${q.toString()}`);
+    setMission(m);
+  };
+  const missionSelect = (
+    <select
+      aria-label="Mission"
+      className="field !w-auto !py-1 !text-[13px] font-medium"
+      value={mission}
+      disabled={!bundle}
+      onChange={(e) => pickMission(e.target.value as MissionId)}
+    >
+      {MISSION_ORDER.map((m) => (
+        <option key={m} value={m}>
+          {MISSIONS[m].label}
+        </option>
+      ))}
+    </select>
+  );
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-rule bg-paper px-3">
       <Link to="/" className="flex items-center gap-1.5 text-ink no-underline hover:text-ink" title="Scent Cone home">
@@ -51,6 +75,7 @@ export function PlannerBar() {
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        {missionSelect}
         {!mobile && (
           <>
             <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Wind</span>

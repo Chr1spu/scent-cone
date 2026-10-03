@@ -7,13 +7,14 @@ import type { AreaBundle } from '../api/types';
 import { DEMO_ALERT_TIMES, VERT_EXAG } from '../config/constants';
 import { PROFILES, TIME, type ProfileId } from '../config/modelParams';
 import type { SearchedSector as SectorShape } from '../models/searchUpdate';
+import { MISSIONS, type HabitatSpec, type MissionId } from '../config/missions';
 import { toLocal, toWorld } from '../geo/grid';
 import { groundY } from '../geo/heights';
 import { sunAt, weatherAt } from '../models/env';
 import { buildTerrainInfo, shadowMask, type TerrainInfo } from '../models/terrainInfo';
 import { computeFallbackWind, smoothedGradients, type TerrainGradients, type WindField } from '../models/wind';
 import { ComputeClient } from '../workers/client';
-import type { AlertResult, DeploymentOut, HeatResult, ProbResult, SearchResult } from '../workers/protocol';
+import type { AlertResult, DeploymentOut, HeatResult, ProbResult, SearchResult, SourceSpec } from '../workers/protocol';
 import { useStore, type State } from './store';
 
 let client: ComputeClient | null = null;
@@ -53,10 +54,13 @@ export interface BootOptions {
   live?: LiveRequest;
   profile?: ProfileId;
   teams?: number;
+  mission?: MissionId;
 }
 
 /** Planner entry point, from the URL: the demo, or a live area chosen on "Plan a search". */
 export async function boot(opts: BootOptions = {}) {
+  // the mission comes from the URL each time the planner opens (applied once the area loads)
+  set({ mission: opts.mission ?? 'wilderness', hides: [], area: null });
   set({
     status: 'loading',
     loadFrac: 0.01,
@@ -143,6 +147,8 @@ async function applyBundle(b: AreaBundle) {
     data: { frame: b.frame, overview: b.overview, detail: b.detail, features: b.features, weather: b.weather, place, wind: activeWind },
   });
   await recomputeProbability();
+  // re-apply the current mission (its scent tuning, deployment rules and source) to the new area
+  if (get().mission !== 'wilderness') await setMission(get().mission, { fly: false });
   set({ status: 'ready' });
   flyTo(1);
   refreshSuggestions();
@@ -157,8 +163,110 @@ function applyProb(p: ProbResult) {
 
 export async function recomputeProbability() {
   const { profile, lkp } = get();
-  const p = await withBusy('Probability map', () => worker().call<ProbResult>({ type: 'probability', profile, lkp }));
+  const p = await sourceCall(() => worker().call<ProbResult>({ type: 'probability', profile, lkp }));
   if (p) applyProb(p);
+}
+
+/** Probability requests: a source with nowhere to put probability explains itself. */
+async function sourceCall(fn: () => Promise<ProbResult>): Promise<ProbResult | null> {
+  set({ busy: { label: 'Probability map', frac: 0 } });
+  try {
+    return await fn();
+  } catch (e) {
+    get().toast(e instanceof Error ? e.message : String(e), 'warn');
+    return null;
+  } finally {
+    set({ busy: null });
+  }
+}
+
+// ---------------------------------------------------------------- missions
+
+function sourceSpec(mission: MissionId): SourceSpec {
+  const s = get();
+  switch (MISSIONS[mission].source) {
+    case 'hides':
+      return { kind: 'hides', hides: s.hides };
+    case 'water':
+      return { kind: 'water' };
+    case 'habitat':
+      return { kind: 'habitat', habitat: s.habitat };
+    case 'area':
+      return { kind: 'area', area: s.area };
+    default:
+      return { kind: 'lkp' };
+  }
+}
+
+/** Sensible starting inputs so every mission shows something straight away. */
+function missionDefaults(mission: MissionId) {
+  const s = get();
+  const b = s.bundle;
+  const [lx, ly] = s.lkp;
+  const m = MISSIONS[mission];
+  const out: Partial<State> = {};
+  if (m.profiles && !m.profiles.includes(s.profile)) out.profile = m.defaultProfile ?? m.profiles[0];
+  if (m.source === 'hides' && s.hides.length === 0) {
+    // demo: hide where the demo subject is; otherwise 300 m east of the staging point
+    const t = b?.config.truth ? toLocal(b.frame, b.config.truth.x, b.config.truth.y) : [lx + 300, ly];
+    out.hides = [[t[0], t[1]]];
+  }
+  if (m.source === 'area') {
+    out.area = { kind: 'circle', x: lx, y: ly, radius: mission === 'evidence' ? 120 : 300 };
+  }
+  return out;
+}
+
+/** Switch mission: source model, scent tuning and deployment rules change; logs reset. */
+export async function setMission(mission: MissionId, opts: { fly?: boolean; keepTeams?: boolean } = {}) {
+  const m = MISSIONS[mission];
+  set({
+    mission,
+    ...missionDefaults(mission),
+    ...(opts.keepTeams ? {} : { teams: m.teams }),
+    deployments: [],
+    alerts: [],
+    searched: [],
+    revealed: false,
+    heat: null,
+    tool: 'none',
+    missionVersion: get().missionVersion + 1,
+  });
+  // keep the profile in the worker in step before switching source
+  if (m.source === 'lkp' || m.source === 'water') {
+    const { profile, lkp } = get();
+    await worker().call<ProbResult>({ type: 'probability', profile, lkp }).catch(() => null);
+  }
+  const p = await sourceCall(() => worker().call<ProbResult>({ type: 'mission', mission, source: sourceSpec(mission) }));
+  if (p) applyProb(p);
+  refreshSuggestions();
+  if (opts.fly !== false) flyTo(m.source === 'area' || m.source === 'hides' ? 4 : 2);
+}
+
+async function updateSource() {
+  const p = await sourceCall(() => worker().call<ProbResult>({ type: 'source', source: sourceSpec(get().mission) }));
+  if (p) applyProb(p);
+  set({ deployments: [] });
+}
+
+export async function addHide(lx: number, ly: number) {
+  set({ hides: [...get().hides, [lx, ly]].slice(-3) as [number, number][] });
+  await updateSource();
+}
+
+export async function clearHides() {
+  set({ hides: [] });
+  get().toast('Hides cleared. Place a hide to see its scent.', 'info');
+}
+
+export async function setArea(area: SectorShape) {
+  set({ area, tool: 'none', searchDraft: { ...get().searchDraft, pts: [] } });
+  await updateSource();
+}
+
+export async function setHabitat(habitat: HabitatSpec) {
+  set({ habitat });
+  await updateSource();
 }
 
 export async function setProfile(profile: ProfileId) {
@@ -280,7 +388,7 @@ export async function deployTeams() {
   );
   if (deps) {
     set({ deployments: deps, layers: { ...get().layers, teams: true } });
-    if (deps.length < teams) get().toast(`Only ${deps.length} useful start points found.`, 'warn');
+    if (deps.length < teams) get().toast(deps.length === 0 ? 'No useful start points: no reachable ground gets this scent at this time.' : `Only ${deps.length} useful start point${deps.length > 1 ? 's' : ''} found; more teams would cover almost nothing.`, 'warn');
     else get().toast(`${deps.length} teams placed. See the Plan tab.`, 'success');
     flyTo(6);
   }
@@ -301,7 +409,7 @@ export async function addAlert(lx: number, ly: number) {
   const alerts = [...get().alerts, { id: alertId++, x: lx, y: ly, t, zone: r.zone }];
   set({ alerts, layers: { ...get().layers, alertZones: true, probability: true } });
   applyProb(r.prob);
-  if (alerts.length >= 2 && !get().revealed && get().bundle?.config.truth) {
+  if (alerts.length >= 2 && !get().revealed && get().bundle?.config.truth && get().mission === 'wilderness') {
     setTimeout(() => {
       set({ revealed: true, tool: 'none' });
       get().toast('Found: the child is inside the overlap of the two traced zones.', 'success');
@@ -333,7 +441,10 @@ export async function markSearched(sector: SectorShape) {
 /** Searched tool click: circle sectors are immediate, polygons collect vertices. */
 export function searchClick(lx: number, ly: number): Promise<void> | void {
   const d = get().searchDraft;
-  if (d.shape === 'circle') return markSearched({ kind: 'circle', x: lx, y: ly, radius: d.radius });
+  if (d.shape === 'circle') {
+    const c: SectorShape = { kind: 'circle', x: lx, y: ly, radius: d.radius };
+    return get().tool === 'area' ? setArea(c) : markSearched(c);
+  }
   // clicking near the first vertex closes the polygon
   if (d.pts.length >= 3 && Math.hypot(d.pts[0][0] - lx, d.pts[0][1] - ly) < 40) return finishPolygon();
   set({ searchDraft: { ...d, pts: [...d.pts, [lx, ly]] } });
@@ -345,7 +456,8 @@ export function finishPolygon(): Promise<void> | void {
     get().toast('A searched polygon needs at least 3 points.', 'warn');
     return;
   }
-  return markSearched({ kind: 'polygon', xs: d.pts.map((p) => p[0]), ys: d.pts.map((p) => p[1]) });
+  const poly: SectorShape = { kind: 'polygon', xs: d.pts.map((p) => p[0]), ys: d.pts.map((p) => p[1]) };
+  return get().tool === 'area' ? setArea(poly) : markSearched(poly);
 }
 
 export async function resetSearch() {
@@ -358,7 +470,7 @@ export async function resetSearch() {
 export async function refreshSuggestions() {
   const b = get().bundle;
   if (!b) return;
-  if (!b.config.truth) {
+  if (!b.config.truth || get().mission !== 'wilderness') {
     set({ suggestions: [] });
     return;
   }

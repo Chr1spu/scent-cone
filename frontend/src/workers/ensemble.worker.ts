@@ -7,6 +7,7 @@ import type { Place, Weather } from '../models/env';
 import { blockIndex, runEnsemble, type BlockIndex } from '../models/scent';
 import { buildTerrainInfo, type TerrainInfo } from '../models/terrainInfo';
 import type { WindField } from '../models/wind';
+import { setTuning } from '../models/tuning';
 
 export interface EnsembleTask {
   prob: Float32Array;
@@ -24,6 +25,7 @@ export interface EnsembleTask {
 export type HelperMsg =
   | { type: 'init'; frame: Frame; detail: GridLevel; overview: GridLevel; weather: Weather; place: Place; wind: WindField }
   | { type: 'wind'; wind: WindField }
+  | { type: 'tuning'; tuning: { tauScale: number; liftScale: number } }
   | { type: 'run'; id: number; task: EnsembleTask };
 
 export type HelperReply = { id: number; heat: Float32Array; contrib?: Float32Array } | { id: number; error: string };
@@ -47,6 +49,10 @@ ctx.onmessage = (ev: MessageEvent<HelperMsg>) => {
   }
   if (m.type === 'wind') {
     wind = m.wind;
+    return;
+  }
+  if (m.type === 'tuning') {
+    setTuning(m.tuning);
     return;
   }
   try {

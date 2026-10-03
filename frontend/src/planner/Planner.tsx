@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { TIME, PROFILES, type ProfileId } from '../config/modelParams';
+import { isMission } from '../config/missions';
 import { SceneRoot } from '../scene/SceneRoot';
 import { boot, finishPolygon, flyTo, scheduleHeat, setTime, setView, type BootOptions } from '../state/controller';
 import { useStore } from '../state/store';
@@ -17,7 +18,8 @@ export function bootOptionsFrom(q: URLSearchParams): BootOptions {
   const lon = Number(q.get('lon'));
   const profile = q.get('profile') as ProfileId | null;
   const teams = Number(q.get('teams')) || undefined;
-  const opts: BootOptions = { teams, profile: profile && PROFILES[profile] ? profile : undefined };
+  const m = q.get('mission');
+  const opts: BootOptions = { teams, profile: profile && PROFILES[profile] ? profile : undefined, mission: isMission(m) ? m : undefined };
   if (q.has('lat') && q.has('lon') && Number.isFinite(lat) && Number.isFinite(lon)) {
     opts.live = {
       lat,

@@ -34,6 +34,8 @@ export interface SearchUpdateInput {
   heatRecv: Float32Array;
   th: DetThresholds;
   map: GridMap;
+  /** chance a dog detects what reaches it (default HOTSPOTS.dogPOD) */
+  pod?: number;
 }
 
 export interface SearchUpdateResult {
@@ -66,6 +68,7 @@ function srcCenter(b: BlockIndex, m: GridMap, s: number): [number, number] {
  */
 export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
   const { sector, contrib, blocks: b, heatRecv, th, map } = inp;
+  const POD = inp.pod ?? HOTSPOTS.dogPOD;
   const inArea: number[] = [];
   let nearest = 0;
   let nearestD = Infinity;
@@ -89,10 +92,10 @@ export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
     for (let r = 0; r < b.nRecv; r++) total += contrib[r * b.nSrc + s];
     let reached = 0;
     if (total > 0) for (const r of inArea) if (heatRecv[r] > th.lo) reached += contrib[r * b.nSrc + s];
-    let pod = total > 0 ? HOTSPOTS.dogPOD * (reached / total) : 0;
+    let pod = total > 0 ? POD * (reached / total) : 0;
     const [sx, sy] = srcCenter(b, map, s);
-    if (sectorContains(sector, sx, sy)) pod = Math.max(pod, HOTSPOTS.dogPOD * meanDet);
-    podSrc[s] = Math.min(pod, HOTSPOTS.dogPOD);
+    if (sectorContains(sector, sx, sy)) pod = Math.max(pod, POD * meanDet);
+    podSrc[s] = Math.min(pod, POD);
   }
   const factor = new Float32Array(b.srcOf.length);
   for (let i = 0; i < factor.length; i++) factor[i] = 1 - podSrc[b.srcOf[i]];
