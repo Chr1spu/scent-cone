@@ -1,11 +1,11 @@
 /** Loads an AreaBundle from the offline demo bundle (/demo/*) or the live backend (/api/*). */
 import { frameOf, type Frame, type GridMeta } from '../geo/grid';
+import { apiBase } from './server';
 import type { Weather } from '../models/env';
 import type { Feature2D } from '../models/probability';
 import type { WindField, WindHour } from '../models/wind';
 import type { AreaBundle, AreaConfig, GeoFeature, Progress } from './types';
 
-const API = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 /** static assets live under Vite's base path (e.g. /scent-cone/ on GitHub Pages) */
 const DEMO = `${import.meta.env.BASE_URL}demo`;
 
@@ -109,7 +109,7 @@ export async function backendHealthy(timeoutMs = 3000): Promise<{ ok: boolean; w
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const j = await fetchJson<{ ok: boolean; windninja: boolean }>(`${API}/api/health`, { signal: ctl.signal });
+    const j = await fetchJson<{ ok: boolean; windninja: boolean }>(`${apiBase()}/api/health`, { signal: ctl.signal });
     return { ok: !!j.ok, windninja: !!j.windninja };
   } catch {
     return { ok: false, windninja: false };
@@ -143,7 +143,7 @@ const HOURS_SPAN = 8;
 
 async function pollJob(jobId: string, onProgress: Progress): Promise<{ source?: string; method?: string; hours?: number[] }> {
   for (;;) {
-    const j = await fetchJson<{ status: string; progress: number; message: string; result: { source?: string; method?: string; hours?: number[] } }>(`${API}/api/jobs/${jobId}`);
+    const j = await fetchJson<{ status: string; progress: number; message: string; result: { source?: string; method?: string; hours?: number[] } }>(`${apiBase()}/api/jobs/${jobId}`);
     onProgress(0.55 + 0.35 * j.progress, j.message || 'Computing wind');
     if (j.status === 'done') return j.result ?? {};
     if (j.status === 'failed') throw new Error(j.message);
@@ -161,7 +161,7 @@ export async function loadLive(onProgress: Progress = () => {}, req: LiveRequest
   const lat = req.lat ?? demo.lat;
   const lon = req.lon ?? demo.lon;
   const isDemoPlace = Math.abs(lat - demo.lat) < 1e-6 && Math.abs(lon - demo.lon) < 1e-6;
-  const area = await fetchJson<AreaResponse>(`${API}/api/areas`, {
+  const area = await fetchJson<AreaResponse>(`${apiBase()}/api/areas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ lat, lon, timezone: isDemoPlace ? demo.timezone : 'auto', detailCenter: req.detailCenter ?? undefined }),
@@ -169,7 +169,7 @@ export async function loadLive(onProgress: Progress = () => {}, req: LiveRequest
   let date = req.date ?? demo.date;
   let startHour = req.startHour ?? demo.startHour;
   if (req.now) {
-    const now = await fetchJson<{ date: string; hour: number }>(`${API}/api/areas/${area.areaId}/now`);
+    const now = await fetchJson<{ date: string; hour: number }>(`${apiBase()}/api/areas/${area.areaId}/now`);
     date = now.date;
     startHour = now.hour;
   }
@@ -203,31 +203,31 @@ export async function loadLive(onProgress: Progress = () => {}, req: LiveRequest
   const nd = cells(dm);
   onProgress(0.1, 'Fetching terrain (USGS 3DEP)');
   const [to, td] = await Promise.all([
-    fetchBin(`${API}/api/areas/${id}/terrain?level=overview`, cells(om) * 4).then((r) => new Float32Array(r.buf)),
-    fetchBin(`${API}/api/areas/${id}/terrain?level=detail`, nd * 4).then((r) => new Float32Array(r.buf)),
+    fetchBin(`${apiBase()}/api/areas/${id}/terrain?level=overview`, cells(om) * 4).then((r) => new Float32Array(r.buf)),
+    fetchBin(`${apiBase()}/api/areas/${id}/terrain?level=detail`, nd * 4).then((r) => new Float32Array(r.buf)),
   ]);
   onProgress(0.3, 'Fetching land cover & OpenStreetMap features');
   const [lo, ld, feats, weather] = await Promise.all([
-    fetchBin(`${API}/api/areas/${id}/landcover?level=overview`, cells(om)).then((r) => new Uint8Array(r.buf)),
-    fetchBin(`${API}/api/areas/${id}/landcover?level=detail`, nd).then((r) => new Uint8Array(r.buf)),
-    fetchJson<{ features: GeoFeature[] }>(`${API}/api/areas/${id}/features`),
-    fetchJson<Weather>(`${API}/api/areas/${id}/weather?date=${base.date}`),
+    fetchBin(`${apiBase()}/api/areas/${id}/landcover?level=overview`, cells(om)).then((r) => new Uint8Array(r.buf)),
+    fetchBin(`${apiBase()}/api/areas/${id}/landcover?level=detail`, nd).then((r) => new Uint8Array(r.buf)),
+    fetchJson<{ features: GeoFeature[] }>(`${apiBase()}/api/areas/${id}/features`),
+    fetchJson<Weather>(`${apiBase()}/api/areas/${id}/weather?date=${base.date}`),
   ]);
   onProgress(0.5, 'Starting wind job');
-  const job = await fetchJson<{ jobId: string }>(`${API}/api/areas/${id}/wind`, {
+  const job = await fetchJson<{ jobId: string }>(`${apiBase()}/api/areas/${id}/wind`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ date: base.date, startHour: hours[0], endHour: hours[hours.length - 1], stepHours: 1 }),
   });
   const res = await pollJob(job.jobId, onProgress);
   onProgress(0.92, 'Downloading wind grids');
-  const fbGrids = await Promise.all(hours.map((h) => fetchBin(`${API}/api/areas/${id}/wind/fallback?date=${base.date}&hour=${h}`, nd * 8).then((r) => splitWind(r.buf, nd))));
+  const fbGrids = await Promise.all(hours.map((h) => fetchBin(`${apiBase()}/api/areas/${id}/wind/fallback?date=${base.date}&hour=${h}`, nd * 8).then((r) => splitWind(r.buf, nd))));
   let windninja: WindField | null = null;
   const warnings: string[] = [];
   if (res.source === 'windninja') {
     const wn = await Promise.all(
       hours.map((h) =>
-        fetchBin(`${API}/api/areas/${id}/wind?date=${base.date}&hour=${h}`, nd * 8).then((r) => ({ src: r.headers.get('X-Wind-Source'), g: splitWind(r.buf, nd) })),
+        fetchBin(`${apiBase()}/api/areas/${id}/wind?date=${base.date}&hour=${h}`, nd * 8).then((r) => ({ src: r.headers.get('X-Wind-Source'), g: splitWind(r.buf, nd) })),
       ),
     );
     if (wn.every((w) => w.src === 'windninja')) windninja = { hours, grids: wn.map((w) => w.g) };

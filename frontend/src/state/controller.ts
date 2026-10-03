@@ -46,30 +46,50 @@ async function withBusy<T>(label: string, fn: () => Promise<T>): Promise<T | nul
 
 // ---------------------------------------------------------------- boot / loading
 
-export async function boot() {
-  const params = new URLSearchParams(location.search);
-  const forceOffline = params.get('offline') === '1';
-  set({ status: 'loading', loadFrac: 0.01, loadLabel: 'Checking backend' });
-  const health = forceOffline ? { ok: false, windninja: false } : await backendHealthy(3000);
-  set({ backend: health });
-  await loadMode(health.ok ? 'live' : 'offline');
+export interface BootOptions {
+  /** live area to load; omitted = the bundled demo */
+  live?: LiveRequest;
+  profile?: ProfileId;
+  teams?: number;
 }
+
+/** Planner entry point, from the URL: the demo, or a live area chosen on "Plan a search". */
+export async function boot(opts: BootOptions = {}) {
+  set({ status: 'loading', loadFrac: 0.01, loadLabel: 'Checking the server', error: null, errorKind: null });
+  const health = await backendHealthy(3000);
+  set({ backend: health });
+  if (!opts.live) {
+    await loadMode('offline');
+  } else if (!health.ok) {
+    set({ status: 'error', errorKind: 'server', error: 'The Scent Cone server is not reachable, so this area cannot be computed.' });
+    return;
+  } else {
+    await loadMode('live', opts.live);
+  }
+  if (get().status !== 'ready') return;
+  if (opts.teams) set({ teams: Math.min(6, Math.max(1, opts.teams)) });
+  if (opts.profile && opts.profile !== get().profile && PROFILES[opts.profile]) {
+    set({ profile: opts.profile });
+    await recomputeProbability();
+  }
+}
+
+let loadGen = 0;
 
 /** Load the offline bundle, or a live area (location/date/focus from `req`, else the last request). */
 export async function loadMode(mode: 'offline' | 'live', req?: LiveRequest) {
   const liveReq = req ?? get().liveRequest ?? {};
-  const onProgress = (f: number, l: string) => set({ loadFrac: f, loadLabel: l });
+  const gen = ++loadGen;
+  const onProgress = (f: number, l: string) => gen === loadGen && set({ loadFrac: f, loadLabel: l });
   set({ status: 'loading', loadFrac: 0.02, loadLabel: mode === 'live' ? 'Loading from backend' : 'Loading offline demo bundle' });
   let bundle: AreaBundle;
   try {
     bundle = mode === 'live' ? await loadLive(onProgress, liveReq) : await loadOffline(onProgress);
+    if (gen !== loadGen) return; // a newer load started (e.g. navigation)
     if (mode === 'live') set({ liveRequest: liveReq });
   } catch (e) {
-    if (mode === 'live') {
-      get().toast(`Live mode failed (${e instanceof Error ? e.message : e}); switched to offline demo.`, 'warn');
-      return loadMode('offline');
-    }
-    set({ status: 'error', error: e instanceof Error ? e.message : String(e) });
+    if (gen !== loadGen) return;
+    set({ status: 'error', errorKind: mode === 'live' ? 'server' : 'data', error: e instanceof Error ? e.message : String(e) });
     return;
   }
   await applyBundle(bundle);
@@ -249,8 +269,8 @@ export async function deployTeams() {
   );
   if (deps) {
     set({ deployments: deps, layers: { ...get().layers, teams: true } });
-    if (deps.length < teams) get().toast(`Only ${deps.length} useful deployment points found.`, 'warn');
-    else get().toast(`${deps.length} teams deployed downwind of high-probability terrain`, 'success');
+    if (deps.length < teams) get().toast(`Only ${deps.length} useful start points found.`, 'warn');
+    else get().toast(`${deps.length} teams placed. See the Plan tab.`, 'success');
     flyTo(6);
   }
 }
@@ -273,11 +293,11 @@ export async function addAlert(lx: number, ly: number) {
   if (alerts.length >= 2 && !get().revealed && get().bundle?.config.truth) {
     setTimeout(() => {
       set({ revealed: true, tool: 'none' });
-      get().toast('Subject located inside the overlap of the back-traced zones', 'success');
+      get().toast('Found: the child is inside the overlap of the two traced zones.', 'success');
       flyTo(7);
     }, 900);
   } else {
-    get().toast(`Alert ${alerts.length} added at ${fmtTime(t)} — back-traced 60 min`, 'info');
+    get().toast(`Alert ${alerts.length} logged at ${fmtTime(t)}. Scent traced back one hour.`, 'info');
   }
 }
 
@@ -296,7 +316,7 @@ export async function markSearched(sector: SectorShape) {
   if (!r) return;
   set({ searched: [...get().searched, { id: searchId++, sector, t0, t1, meanDet: r.meanDet, recheck: r.recheck }], searchDraft: { ...get().searchDraft, pts: [] } });
   applyProb(r.prob);
-  get().toast(r.recheck ? 'Sector searched in poor scent conditions — flagged for recheck' : 'Sector searched, no alert: probability shifted elsewhere', r.recheck ? 'warn' : 'info');
+  get().toast(r.recheck ? 'Searched in poor scent conditions: marked for a recheck.' : 'Searched with no alert. Probability moved elsewhere.', r.recheck ? 'warn' : 'info');
 }
 
 /** Searched tool click: circle sectors are immediate, polygons collect vertices. */

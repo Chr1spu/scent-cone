@@ -93,7 +93,7 @@ function Team({ bundle, d }: { bundle: AreaBundle; d: DeploymentOut }) {
       <DrapedLine bundle={bundle} pts={circlePts(d.x, d.y, 60)} color={color} lift={4} opacity={0.7} />
       <Beacon position={p} color={color} height={70} radius={14} pulse={false} />
       <Label position={[p[0], p[1] + 95 * VERT_EXAG, p[2]]} tone="amber">
-        <span style={{ color }}>●</span> Team {d.team} · {fmtTime(d.bestWindow[0])}–{fmtTime(d.bestWindow[1])} ·{' '}
+        Team {d.team}: best {fmtTime(d.bestWindow[0])} to {fmtTime(d.bestWindow[1])}, covers{' '}
         {(d.coveredProb * 100).toFixed(1)}%
       </Label>
     </group>

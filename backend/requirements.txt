@@ -1,4 +1,5 @@
-fastapi>=0.110
+fastapi>=0.115
+starlette>=0.47  # allow_private_network
 uvicorn[standard]>=0.29
 numpy>=1.26
 rasterio>=1.3

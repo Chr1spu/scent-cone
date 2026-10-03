@@ -21,7 +21,7 @@ export function AlertZones({ bundle }: { bundle: AreaBundle }) {
           <group key={a.id}>
             <Beacon position={p} color={color} height={100} radius={18} />
             <Label position={[p[0], p[1] + 115 * VERT_EXAG, p[2]]} tone="pink">
-              <span style={{ color }}>▲</span> Alert {i + 1} · {fmtTime(a.t)} · traced back 60 min
+              Alert {i + 1}, {fmtTime(a.t)}
             </Label>
           </group>
         );
@@ -30,7 +30,7 @@ export function AlertZones({ bundle }: { bundle: AreaBundle }) {
         <group>
           <Beacon position={toScene(bundle, peak[0], peak[1])} color={COLORS.cyan} height={160} radius={24} />
           <Label position={toScene(bundle, peak[0], peak[1], 175)} tone="cyan">
-            Posterior peak{alerts.length >= 2 ? ' · zones overlap' : ''}
+            Most likely now
           </Label>
         </group>
       )}

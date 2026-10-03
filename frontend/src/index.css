@@ -1,12 +1,107 @@
+@import '@fontsource/barlow/400.css';
+@import '@fontsource/barlow/500.css';
+@import '@fontsource/barlow/600.css';
+@import '@fontsource/barlow/700.css';
+@import '@fontsource/barlow-condensed/600.css';
+@import '@fontsource/barlow-condensed/700.css';
+@import '@fontsource/source-serif-4/400.css';
+@import '@fontsource/source-serif-4/400-italic.css';
+@import '@fontsource/source-serif-4/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; margin: 0; overflow: hidden; }
-body { color: #d8e1e8; font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-.panel { @apply bg-ink-900/85 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl; }
-.btn { @apply px-3 py-1.5 rounded-md text-sm font-medium bg-ink-700 hover:bg-ink-600 border border-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed; }
-.btn-primary { @apply bg-amber-500/90 hover:bg-amber-400 text-ink-950 border-amber-300/50; }
-.btn-active { @apply bg-cyan-600/60 border-cyan-300/50; }
-.label { @apply text-[11px] uppercase tracking-wider text-slate-400 font-semibold; }
-input[type=range] { accent-color: #ffb547; }
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  @apply bg-paper font-sans text-ink antialiased;
+  font-feature-settings: 'tnum' 0;
+}
+a {
+  @apply text-sar-dark underline decoration-1 underline-offset-2 hover:text-sar;
+}
+::selection {
+  @apply bg-sar-light text-ink;
+}
+
+@layer components {
+  /* buttons: rectangular, ruled, no gradients */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded border border-rule bg-paper px-3 py-1.5 text-sm font-medium text-ink no-underline transition-colors hover:border-ink-3 hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply border-sar-dark bg-sar text-white hover:border-sar-dark hover:bg-sar-dark hover:text-white;
+  }
+  .btn-on {
+    @apply border-ink bg-ink text-paper hover:bg-ink-800 hover:text-paper;
+  }
+  .btn-sm {
+    @apply px-2 py-1 text-xs;
+  }
+  .field {
+    @apply w-full rounded border border-rule bg-white px-2 py-1 text-sm text-ink outline-none focus:border-ink-2;
+  }
+  .eyebrow {
+    @apply font-display text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-3;
+  }
+  .num {
+    @apply font-mono tabular-nums;
+  }
+  /* planner side panels: solid paper, ruled */
+  .sheet {
+    @apply border-rule bg-paper text-ink;
+  }
+  .prose-site p {
+    @apply mb-4 font-serif text-[17px] leading-[1.65] text-ink;
+  }
+  .prose-site h2 {
+    @apply mb-3 mt-12 font-display text-3xl font-bold text-ink;
+  }
+  .prose-site h3 {
+    @apply mb-2 mt-8 text-lg font-semibold text-ink;
+  }
+  .prose-site ul {
+    @apply mb-4 list-disc space-y-1.5 pl-6 font-serif text-[17px] leading-[1.6];
+  }
+  .prose-site ol {
+    @apply mb-4 list-decimal space-y-1.5 pl-6 font-serif text-[17px] leading-[1.6];
+  }
+  .prose-site code {
+    @apply rounded-sm bg-paper-2 px-1 font-mono text-[0.9em];
+  }
+  .prose-site pre {
+    @apply mb-4 overflow-x-auto rounded border border-rule bg-ink-900 p-3 font-mono text-[13px] leading-relaxed text-paper;
+  }
+  .prose-site table {
+    @apply mb-6 w-full border-collapse text-sm;
+  }
+  .prose-site th {
+    @apply border-b-2 border-ink py-1.5 pr-4 text-left font-semibold;
+  }
+  .prose-site td {
+    @apply border-b border-rule py-1.5 pr-4 align-top;
+  }
+}
+
+/* leaflet controls in the site palette */
+.leaflet-container {
+  font-family: Barlow, system-ui, sans-serif;
+  background: #e1d9c6;
+}
+.leaflet-bar a {
+  color: #1e2420 !important;
+}
+.leaflet-control-attribution {
+  font-size: 10px;
+}
+
+input[type='range'] {
+  accent-color: #d4521c;
+}

@@ -37,7 +37,7 @@ function LkpMarker({ bundle }: { bundle: AreaBundle }) {
       </group>
       <Beacon position={p} color={COLORS.lkp} height={110} radius={18} />
       <Label position={[p[0], p[1] + 125 * VERT_EXAG, p[2]]}>
-        <span className="text-white">⛺ LKP · campsite · {fmtTime(bundle.config.missingAt)}</span>
+        Last seen {fmtTime(bundle.config.missingAt)}
       </Label>
     </group>
   );
@@ -88,7 +88,7 @@ function ChildMarkerAt({ bundle, truthXY }: { bundle: AreaBundle; truthXY: [numb
       </group>
       <Beacon position={p} color={COLORS.child} height={220} radius={30} />
       <Label position={[p[0], p[1] + 240 * VERT_EXAG, p[2]]} tone="amber">
-        ★ Found: 9-year-old · inside alert overlap
+        Found: inside the alert overlap
       </Label>
     </group>
   );
@@ -126,7 +126,7 @@ function SearchedSectors({ bundle }: { bundle: AreaBundle }) {
           <group key={s.id}>
             <DrapedLine bundle={bundle} pts={ring} color={color} lift={4} />
             <Label position={toScene(bundle, cx, cy, 10)} tone={s.recheck ? 'warn' : 'default'}>
-              Searched {fmtTime(s.t0)}–{fmtTime(s.t1)} · no alert{s.recheck ? ' · ⚠ recheck (poor scent)' : ''}
+              Searched {fmtTime(s.t0)} to {fmtTime(s.t1)}{s.recheck ? ', recheck: poor scent' : ''}
             </Label>
           </group>
         );
@@ -165,7 +165,7 @@ function Suggestions({ bundle }: { bundle: AreaBundle }) {
             <group key={i}>
               <Beacon position={p} color={COLORS.alert[i % 4]} height={90} radius={26} />
               <Label position={[p[0], p[1] + 105 * VERT_EXAG, p[2]]} tone="pink">
-                Radio: dog alerted here at {fmtTime(t)} — click to add
+                Radio report: alert at {fmtTime(t)}. Click to log it
               </Label>
             </group>
           );

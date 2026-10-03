@@ -114,3 +114,13 @@ def test_auto_timezone_lookup(tmp_cache, monkeypatch):
     assert r.status_code == 200
     assert r.json()["timezone"] == "Europe/Zurich"
     assert r.json()["overviewMeta"]["crs"] == "EPSG:32632"
+
+
+def test_public_site_may_call_local_server():
+    """The HTTPS site calls a server on localhost: preflight must allow private network access."""
+    from app.main import app
+    c = TestClient(app)
+    r = c.options("/api/health", headers={"Origin": "https://chr1spu.github.io", "Access-Control-Request-Method": "GET",
+                                          "Access-Control-Request-Private-Network": "true"})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-private-network") == "true"

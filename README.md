@@ -8,6 +8,19 @@
 
 This is a hackathon build. Every model is a tunable heuristic that is *plausible and explainable*, not research-grade, and the UI says so.
 
+## The website
+
+| Page | What it is |
+| --- | --- |
+| `/` | Home: what Scent Cone does, with screenshots from the demo |
+| `/new` | **Plan a search**: pick the last known point on a topographic map (place search, coordinates, your location, or click), the time window (now, or a date and start hour), the subject and the number of teams |
+| `/planner` | The planner. `?demo` loads the bundled Catskills scenario; `?lat=&lon=&now=1&profile=&teams=` (or `&date=&start=`) loads a live area |
+| `/how-it-works` | The method, every parameter, diagrams and limitations |
+| `/guide` | Demo walkthrough, controls, keyboard, running the server |
+| `/about` | Purpose, disclaimer, data sources and credits |
+
+The public site has no server, so it runs the demo. To plan real areas from it, run `docker compose up` locally and enter `http://localhost:8000` as the server on **Plan a search** (the address is saved in your browser).
+
 ## Demo scenario
 
 *At 4:00 PM a 9-year-old wandered away from a campsite (Devil's Tombstone Campground, Stony Clove Notch, Catskills NY). Sunset is about 7:00 PM. Three dog teams are available. Where do we send them?*

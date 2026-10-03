@@ -85,6 +85,8 @@ export interface State {
   loadFrac: number;
   loadLabel: string;
   error: string | null;
+  /** what failed: the server (offer the demo) or the bundled data */
+  errorKind: 'server' | 'data' | null;
   mode: 'offline' | 'live';
   backend: { ok: boolean; windninja: boolean };
   bundle: AreaBundle | null;
@@ -136,6 +138,7 @@ export const useStore = create<State>((set, get) => ({
   loadFrac: 0,
   loadLabel: 'Starting',
   error: null,
+  errorKind: null,
   mode: 'offline',
   backend: { ok: false, windninja: false },
   bundle: null,

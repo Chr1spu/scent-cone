@@ -22,7 +22,9 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Scent Cone API", version="0.1.0")
 origins = os.environ.get("CORS_ORIGINS", "*").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"],
-                   expose_headers=["X-Grid-Meta", "X-Wind-Source", "X-Data-Info"])
+                   expose_headers=["X-Grid-Meta", "X-Wind-Source", "X-Data-Info"],
+                   # lets the public HTTPS site call a server on localhost (Private Network Access)
+                   allow_private_network=True)
 
 
 class AreaRequest(BaseModel):

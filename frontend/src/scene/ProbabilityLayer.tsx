@@ -15,7 +15,7 @@ export function ProbabilityLayer({ bundle }: { bundle: AreaBundle }) {
   if (!visible || !prob || alerts > 0 || view !== 'map') return null;
   return (
     <Label position={toScene(bundle, prob.peak[0], prob.peak[1], 40)} tone="cyan">
-      Most likely cell in segment
+      Most likely spot
     </Label>
   );
 }

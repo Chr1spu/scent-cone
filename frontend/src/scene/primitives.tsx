@@ -67,16 +67,22 @@ export function Beacon({ position, color, height = 140, radius = 22, pulse = tru
 }
 
 export function Label({ position, children, tone = 'default' }: { position: [number, number, number]; children: ReactNode; tone?: 'default' | 'amber' | 'pink' | 'cyan' | 'warn' }) {
-  const toneCls: Record<string, string> = {
-    default: 'border-white/15 text-slate-100',
-    amber: 'border-amber-300/50 text-amber-100',
-    pink: 'border-pink-400/60 text-pink-100',
-    cyan: 'border-cyan-300/50 text-cyan-100',
-    warn: 'border-orange-400/70 text-orange-100',
+  // map tags: solid ink with a coloured edge, like annotations on a printed map
+  const edge: Record<string, string> = {
+    default: '#f4f0e6',
+    amber: '#ffb547',
+    pink: '#ff4fa3',
+    cyan: '#23b5c4',
+    warn: '#d4521c',
   };
   return (
     <Html position={position} center zIndexRange={[20, 0]} style={{ pointerEvents: 'none' }}>
-      <div className={`whitespace-nowrap rounded-md border bg-ink-900/85 px-2 py-1 text-[11px] font-medium shadow-lg backdrop-blur ${toneCls[tone]}`}>{children}</div>
+      <div
+        className="whitespace-nowrap px-1.5 py-0.5 text-[11px] font-medium leading-tight text-[#f4f0e6]"
+        style={{ background: 'rgba(13,17,15,0.88)', borderLeft: `3px solid ${edge[tone]}`, fontFamily: 'Barlow, system-ui, sans-serif' }}
+      >
+        {children}
+      </div>
     </Html>
   );
 }
