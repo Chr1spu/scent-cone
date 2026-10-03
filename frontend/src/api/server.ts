@@ -7,11 +7,12 @@ const KEY = 'scentcone.server';
 export function apiBase(): string {
   try {
     const saved = localStorage.getItem(KEY);
-    if (saved) return saved.replace(/\/+$/, '');
+    if (saved?.trim()) return saved.trim().replace(/\/+$/, '');
   } catch {
     /* storage unavailable */
   }
-  return ((import.meta.env.VITE_API_BASE as string | undefined) ?? '').replace(/\/+$/, '');
+  // tolerate stray whitespace / a trailing slash pasted into the hosting dashboard
+  return ((import.meta.env.VITE_API_BASE as string | undefined) ?? '').trim().replace(/\/+$/, '');
 }
 
 export function savedServer(): string {
