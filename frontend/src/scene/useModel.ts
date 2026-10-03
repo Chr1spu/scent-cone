@@ -25,12 +25,12 @@ export function loadModel(name: ModelName): Promise<THREE.Group | null> {
   if (!p) {
     p = (async () => {
       try {
-        const r = await fetch(`/models/${name}`);
+        const r = await fetch(`${import.meta.env.BASE_URL}models/${name}`);
         if (!r.ok) return null;
         const buf = await r.arrayBuffer();
         const magic = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(4, buf.byteLength)));
         if (magic !== 'glTF') return null;
-        const gltf = await new GLTFLoader().parseAsync(buf, '/models/');
+        const gltf = await new GLTFLoader().parseAsync(buf, `${import.meta.env.BASE_URL}models/`);
         const scene = gltf.scene;
         // normalise: base at y = 0
         const box = new THREE.Box3().setFromObject(scene);

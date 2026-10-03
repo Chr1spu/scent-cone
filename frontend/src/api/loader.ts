@@ -6,6 +6,8 @@ import type { WindField, WindHour } from '../models/wind';
 import type { AreaBundle, AreaConfig, GeoFeature, Progress } from './types';
 
 const API = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+/** static assets live under Vite's base path (e.g. /scent-cone/ on GitHub Pages) */
+const DEMO = `${import.meta.env.BASE_URL}demo`;
 
 async function fetchBin(url: string, expectedBytes: number, init?: RequestInit): Promise<{ buf: ArrayBuffer; headers: Headers }> {
   const r = await fetch(url, init);
@@ -49,7 +51,7 @@ export function featuresToLocal(fc: { features: GeoFeature[] }, frame: Frame): F
 }
 
 export async function loadConfig(): Promise<AreaConfig> {
-  return fetchJson<AreaConfig>('/demo/area.json');
+  return fetchJson<AreaConfig>(`${DEMO}/area.json`);
 }
 
 // ---------------------------------------------------------------- offline
@@ -65,20 +67,20 @@ export async function loadOffline(onProgress: Progress = () => {}): Promise<Area
   const total = 6 + config.windHours.length * 2;
   const tick = (label: string) => onProgress(0.05 + (0.9 * ++done) / total, label);
   const [to, td, lo, ld, feats, weather] = await Promise.all([
-    fetchBin('/demo/terrain_overview.bin', cells(om) * 4).then((r) => (tick('terrain'), new Float32Array(r.buf))),
-    fetchBin('/demo/terrain_detail.bin', nd * 4).then((r) => (tick('terrain'), new Float32Array(r.buf))),
-    fetchBin('/demo/landcover_overview.bin', cells(om)).then((r) => (tick('land cover'), new Uint8Array(r.buf))),
-    fetchBin('/demo/landcover_detail.bin', nd).then((r) => (tick('land cover'), new Uint8Array(r.buf))),
-    fetchJson<{ features: GeoFeature[] }>('/demo/features.geojson').then((r) => (tick('trails & streams'), r)),
-    fetchJson<Weather>('/demo/weather.json').then((r) => (tick('weather'), r)),
+    fetchBin(`${DEMO}/terrain_overview.bin`, cells(om) * 4).then((r) => (tick('terrain'), new Float32Array(r.buf))),
+    fetchBin(`${DEMO}/terrain_detail.bin`, nd * 4).then((r) => (tick('terrain'), new Float32Array(r.buf))),
+    fetchBin(`${DEMO}/landcover_overview.bin`, cells(om)).then((r) => (tick('land cover'), new Uint8Array(r.buf))),
+    fetchBin(`${DEMO}/landcover_detail.bin`, nd).then((r) => (tick('land cover'), new Uint8Array(r.buf))),
+    fetchJson<{ features: GeoFeature[] }>(`${DEMO}/features.geojson`).then((r) => (tick('trails & streams'), r)),
+    fetchJson<Weather>(`${DEMO}/weather.json`).then((r) => (tick('weather'), r)),
   ]);
   const hours = config.windHours;
-  const fbGrids = await Promise.all(hours.map((h) => fetchBin(`/demo/wind_fallback_${pad(h)}.bin`, nd * 8).then((r) => (tick('wind'), splitWind(r.buf, nd)))));
+  const fbGrids = await Promise.all(hours.map((h) => fetchBin(`${DEMO}/wind_fallback_${pad(h)}.bin`, nd * 8).then((r) => (tick('wind'), splitWind(r.buf, nd)))));
   let windninja: WindField | null = null;
   const warnings = [...(config.warnings ?? [])];
   if ((config.windNinjaHours?.length ?? 0) > 0) {
     try {
-      const g = await Promise.all(hours.map((h) => fetchBin(`/demo/wind_${pad(h)}.bin`, nd * 8).then((r) => (tick('WindNinja wind'), splitWind(r.buf, nd)))));
+      const g = await Promise.all(hours.map((h) => fetchBin(`${DEMO}/wind_${pad(h)}.bin`, nd * 8).then((r) => (tick('WindNinja wind'), splitWind(r.buf, nd)))));
       windninja = { hours, grids: g };
     } catch (e) {
       warnings.push('WindNinja wind files missing from bundle; using fallback wind.');

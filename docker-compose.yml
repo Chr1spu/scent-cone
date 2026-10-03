@@ -1,8 +1,9 @@
 services:
   backend:
     build: ./backend
+    image: scent-cone-backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend/cache:/app/cache
       - ./backend/data:/app/data

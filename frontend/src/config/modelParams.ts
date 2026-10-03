@@ -58,10 +58,10 @@ export const ENSEMBLE = {
   rotDeg: 20,
   scaleMin: 0.7,
   scaleMax: 1.3,
-  particlesPerMember: 6000,
+  particlesPerMember: 4500,
   windowMin: 60,
   /** simulated step for off-screen ensembles (s); visible sim uses SCENT.dt */
-  dt: 10,
+  dt: 12,
   /** cheap per-hour snapshots for best time windows */
   hourlyParticles: 3000,
 };
