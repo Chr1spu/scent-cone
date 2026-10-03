@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body { color: #d8e1e8; font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.panel { @apply bg-ink-900/85 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl; }
+.btn { @apply px-3 py-1.5 rounded-md text-sm font-medium bg-ink-700 hover:bg-ink-600 border border-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed; }
+.btn-primary { @apply bg-amber-500/90 hover:bg-amber-400 text-ink-950 border-amber-300/50; }
+.btn-active { @apply bg-cyan-600/60 border-cyan-300/50; }
+.label { @apply text-[11px] uppercase tracking-wider text-slate-400 font-semibold; }
+input[type=range] { accent-color: #ffb547; }

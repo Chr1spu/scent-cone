@@ -1,0 +1,11 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/cache:/app/cache
+      - ./backend/data:/app/data
+      - ./frontend/public/demo:/demo   # build_demo.py --out /demo
+    environment:
+      - CORS_ORIGINS=*
