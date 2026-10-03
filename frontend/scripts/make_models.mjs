@@ -131,9 +131,10 @@ await save('shrub.glb', [
 ]);
 
 // ---- tent: orange A-frame with a dark door, ~1.4 m
+// a 3-sided cylinder rotated -90° about x: ridge vertex up, long axis along z
 await save('tent.glb', [
-  part(cyl(1.25, 1.25, 2.6, 3), '#e8823a', { pos: [0, 0.62, 0], rot: [Math.PI / 2, 0, 0], scale: [1, 1, 1] }),
-  part(box(0.02, 0.8, 0.6), '#2a1d14', { pos: [1.31, 0.42, 0] }), // door (front, +x)
+  part(cyl(1.25, 1.25, 2.6, 3), '#e8823a', { pos: [0, 0.62, 0], rot: [-Math.PI / 2, 0, 0] }),
+  part(box(0.6, 0.8, 0.02), '#2a1d14', { pos: [0, 0.42, 1.31] }), // door on the front gable
   part(box(2.9, 0.05, 2.0), '#3d4a3a', { pos: [0, 0.025, 0] }), // groundsheet
 ]);
 
