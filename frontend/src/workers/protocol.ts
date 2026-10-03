@@ -4,6 +4,7 @@ import type { Place, Weather } from '../models/env';
 import type { Feature2D } from '../models/probability';
 import type { WindField } from '../models/wind';
 import type { Frame } from '../geo/grid';
+import type { SearchedSector } from '../models/searchUpdate';
 
 export interface InitMsg {
   frame: Frame;
@@ -28,7 +29,11 @@ export interface HeatResult {
   heat: Float32Array;
   lo: number;
   hi: number;
-  /** top hotspot cells (detail indices), strongest first */
+  /** reference (neutral-conditions) 95th percentile, for a time-independent display scale */
+  refHi: number;
+  /** total scent present relative to the neutral-conditions reference (≈1 neutral, <1 poor) */
+  relStrength: number;
+  /** top hotspot cells (detail indices), strongest first; only cells above θ1 */
   hotspots: number[];
 }
 
@@ -63,7 +68,7 @@ export type Request =
   | { type: 'heat'; t: number }
   | { type: 'deploy'; t: number; teams: number }
   | { type: 'alert'; x: number; y: number; t: number }
-  | { type: 'searched'; x: number; y: number; radius: number; t: number }
+  | { type: 'searched'; sector: SearchedSector; t0: number; t1: number }
   | { type: 'resetSearch' }
   | { type: 'suggestAlerts'; truth: [number, number]; times: number[] };
 

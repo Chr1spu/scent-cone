@@ -13,6 +13,7 @@ export function TimeSlider() {
   const time = useStore((s) => s.time);
   const playing = useStore((s) => s.playing);
   const activeWind = useStore((s) => s.activeWind);
+  const heat = useStore((s) => s.heat);
   const set = useStore((s) => s.set);
   const info = useMemo(() => {
     if (!bundle) return null;
@@ -38,13 +39,22 @@ export function TimeSlider() {
   if (!bundle || !info) return null;
   const t0 = bundle.config.startHour ?? TIME.start;
   const t1 = bundle.config.endHour ?? TIME.end;
-  const { env, q, mean } = info;
+  const { env, mean } = info;
+  // once the scent model has run for this time, its result decides the label
+  const modelQ =
+    heat && Math.abs(heat.t - time) < 1e-6
+      ? {
+          label: (heat.relStrength > 0.8 ? 'Good' : heat.relStrength > 0.55 ? 'Fair' : 'Poor') as 'Good' | 'Fair' | 'Poor',
+          reason: `model: ${Math.round(heat.relStrength * 100)}% of neutral-conditions scent${info.q.label !== 'Good' ? ` (${info.q.reason})` : ''}`,
+        }
+      : null;
+  const q = modelQ ?? info.q;
   const qCls = q.label === 'Good' ? 'bg-emerald-500/20 text-emerald-200 ring-emerald-400/40' : q.label === 'Fair' ? 'bg-amber-500/20 text-amber-200 ring-amber-400/40' : 'bg-rose-500/20 text-rose-200 ring-rose-400/40';
   const ticks = [];
   for (let h = t0; h <= t1; h++) ticks.push(h);
   const missing = bundle.config.missingAt;
   return (
-    <div className="panel pointer-events-auto absolute bottom-4 left-1/2 z-10 w-[min(860px,calc(100vw-32px))] -translate-x-1/2 px-4 py-3">
+    <div className="panel pointer-events-auto absolute bottom-2 left-1/2 z-10 w-[min(860px,calc(100vw-16px))] -translate-x-1/2 px-3 py-2 md:bottom-4 md:px-4 md:py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <button
           className="btn btn-primary w-20"
@@ -56,7 +66,7 @@ export function TimeSlider() {
         >
           {playing ? '❚❚ Pause' : '▶ Play'}
         </button>
-        <div className="font-mono text-2xl font-semibold tabular-nums text-white">{fmtTime(time)}</div>
+        <div className="font-mono text-xl font-semibold tabular-nums text-white md:text-2xl">{fmtTime(time)}</div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
           <span title="Sun elevation">
             ☀ <b className="tabular-nums">{env.sun.elevation.toFixed(1)}°</b>
@@ -64,12 +74,12 @@ export function TimeSlider() {
           <span title="Model wind (domain mean)">
             ➶ <b className="tabular-nums">{mean.speed.toFixed(1)} m/s</b> from {compass(mean.dir)}
           </span>
-          <span>
+          <span className="hidden sm:inline">
             🌡 {env.temperature.toFixed(0)}°C · RH {env.humidity.toFixed(0)}% · cloud {env.cloudCover.toFixed(0)}%
           </span>
         </div>
         <div className={`ml-auto rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${qCls}`} title={q.reason}>
-          Scent: {q.label} <span className="font-normal opacity-80">· {q.reason}</span>
+          Scent: {q.label} <span className="hidden font-normal opacity-80 sm:inline">· {q.reason}</span>
         </div>
       </div>
       <div className="relative mt-2">

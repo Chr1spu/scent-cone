@@ -5,7 +5,7 @@ import type { AreaBundle, GridLevel } from '../api/types';
 import { CONTOUR_DETAIL_M, CONTOUR_OVERVIEW_M, VERT_EXAG } from '../config/constants';
 import { localBounds, type Frame } from '../geo/grid';
 import { sunAt } from '../models/env';
-import { addAlert, brush, markSearched, setLkp } from '../state/controller';
+import { addAlert, brush, searchClick, setLkp } from '../state/controller';
 import { useStore } from '../state/store';
 import { byteTexture, createTerrainMaterial } from './ContourMaterial';
 
@@ -181,30 +181,44 @@ export function Terrain({ bundle }: { bundle: AreaBundle }) {
         break;
       case 'searched':
         if (!inDetail) return s.toast('Searched sectors must be inside the focus segment', 'warn');
-        markSearched(lx, ly);
+        searchClick(lx, ly);
         break;
       case 'brushUp':
       case 'brushDown':
         brush(lx, ly, s.tool === 'brushUp');
-        break;
-      case 'focus':
-        s.set({ focusPreview: [lx, ly] });
         break;
       default:
         break;
     }
   };
 
+  // focus tool: press and drag the 3 km square (orbit controls are paused while the tool is on)
+  const dragging = useRef(false);
+  const onDown = (e: ThreeEvent<PointerEvent>) => {
+    const s = useStore.getState();
+    if (s.tool !== 'focus' || e.button !== 0) return;
+    e.stopPropagation();
+    dragging.current = true;
+    s.set({ focusPreview: [e.point.x, -e.point.z] });
+  };
+  const onUp = () => {
+    dragging.current = false;
+  };
   const onMove = (e: ThreeEvent<PointerEvent>) => {
     const s = useStore.getState();
     if (s.tool === 'none') return;
+    if (s.tool === 'focus') {
+      if (dragging.current && e.buttons & 1) s.set({ focusPreview: [e.point.x, -e.point.z] });
+      else dragging.current = false;
+      return;
+    }
     s.set({ hover: [e.point.x, -e.point.z] });
   };
 
   return (
     <group>
-      <mesh geometry={overviewGeo} material={overviewMat} onClick={(e) => onClick(e, 'overview')} onPointerMove={onMove} />
-      <mesh geometry={detailGeo} material={detailMat} onClick={(e) => onClick(e, 'detail')} onPointerMove={onMove} />
+      <mesh geometry={overviewGeo} material={overviewMat} onClick={(e) => onClick(e, 'overview')} onPointerMove={onMove} onPointerDown={onDown} onPointerUp={onUp} />
+      <mesh geometry={detailGeo} material={detailMat} onClick={(e) => onClick(e, 'detail')} onPointerMove={onMove} onPointerDown={onDown} onPointerUp={onUp} />
     </group>
   );
 }

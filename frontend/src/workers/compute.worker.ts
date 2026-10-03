@@ -3,9 +3,9 @@
  * Heavy computation off the main thread: probability, ensembles, hotspots, deployment,
  * alert back-tracing and negative search updates. Holds the search state (prior, likelihood).
  */
-import { ENSEMBLE, HOTSPOTS, PROBABILITY, PROFILES, SEARCH } from '../config/modelParams';
+import { ENSEMBLE, HOTSPOTS, PROBABILITY, PROFILES } from '../config/modelParams';
 import { cellCenterLocal, gridMap, insideGrid, localBounds, type GridMap } from '../geo/grid';
-import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, snapshotScore, sourceSums } from '../models/hotspots';
+import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, snapshotScore, sourceSums, type DetThresholds } from '../models/hotspots';
 import {
   applyBrush,
   barrierFactor,
@@ -20,7 +20,7 @@ import {
   type StaticLayers,
 } from '../models/probability';
 import { blockIndex, runEnsemble, type BlockIndex } from '../models/scent';
-import { searchUpdate } from '../models/searchUpdate';
+import { searchUpdate, type SearchedSector } from '../models/searchUpdate';
 import { buildTerrainInfo, LC, type TerrainInfo } from '../models/terrainInfo';
 import { alertLikelihood, argmax, backtrace, driftPoint } from '../models/triangulation';
 import { sampleWind, type WindField } from '../models/wind';
@@ -47,10 +47,24 @@ interface State {
   ovPost: Float32Array | null;
   detailPost: Float32Array | null;
   segmentFraction: number;
-  last: { t: number; key: string; heat: Float32Array; contrib: Float32Array; heatRecv: Float32Array } | null;
+  last: Ensemble | null;
   snapshots: { key: string; byHour: Map<number, Float32Array> } | null;
   profile: keyof typeof PROFILES;
   lkp: [number, number];
+}
+
+interface Ensemble {
+  t: number;
+  windowMin: number;
+  key: string;
+  heat: Float32Array;
+  contrib: Float32Array;
+  heatRecv: Float32Array;
+  /** absolute thresholds from the neutral reference run, detail- and receiver-level */
+  th: DetThresholds;
+  /** scent present relative to the neutral reference */
+  relStrength: number;
+  thRecv: DetThresholds;
 }
 
 let S: State | null = null;
@@ -62,7 +76,7 @@ function st(): State {
 
 function init(m: InitMsg) {
   const ovMap = gridMap(m.overview.meta, m.frame);
-  const ti = buildTerrainInfo(m.detail.meta, m.frame, m.detail.elev, m.detail.landcover);
+  const ti = buildTerrainInfo(m.detail.meta, m.frame, m.detail.elev, m.detail.landcover, m.overview);
   const ovLayers = buildStaticLayers(m.overview.meta, ovMap, m.overview.elev, m.overview.landcover, m.features);
   const nD = m.detail.elev.length;
   const detailWater = new Uint8Array(nD);
@@ -135,38 +149,59 @@ function recomputePosterior(): ProbResult {
   return { overview: ovPost.slice(), detail: prob.slice(), segmentFraction: s.segmentFraction, peak: cellCenterLocal(s.ti.map, argmax(prob)) };
 }
 
-function ensembleAt(t: number, report: (f: number, l: string) => void) {
+/**
+ * Ensemble for the window ending at t, plus a neutral-conditions reference run with the same
+ * wind that fixes the absolute detectability thresholds.
+ */
+function ensembleAt(t: number, report: (f: number, l: string) => void, windowMin: number = ENSEMBLE.windowMin): Ensemble {
   const s = st();
   const key = `${s.probVersion}:${s.windVersion}`;
-  if (s.last && s.last.key === key && Math.abs(s.last.t - t) < 1e-6) return s.last;
+  if (s.last && s.last.key === key && Math.abs(s.last.t - t) < 1e-6 && s.last.windowMin === windowMin) return s.last;
+  const base = { ti: s.ti, field: s.wind, place: s.init.place, weather: s.init.weather, prob: s.detailPost!, tEnd: t, windowMin };
   const { heat, contrib } = runEnsemble({
-    ti: s.ti,
-    field: s.wind,
-    place: s.init.place,
-    weather: s.init.weather,
-    prob: s.detailPost!,
-    tEnd: t,
+    ...base,
     blocks: s.blocks,
     seed: 1000 + Math.round(t * 60),
-    onProgress: (f) => report(0.05 + 0.9 * f, `Scent ensemble ${Math.round(f * ENSEMBLE.members)}/${ENSEMBLE.members}`),
+    onProgress: (f) => report(0.05 + 0.8 * f, `Scent ensemble ${Math.round(f * ENSEMBLE.members)}/${ENSEMBLE.members}`),
   });
-  const heatRecv = blockMean(heat, s.ti.meta.cols, s.ti.meta.rows, s.blocks);
-  s.last = { t, key, heat, contrib: contrib!, heatRecv };
+  report(0.88, 'Reference run (neutral scent conditions)');
+  const ref = runEnsemble({ ...base, members: ENSEMBLE.referenceMembers, particles: ENSEMBLE.referenceParticles, neutral: true, seed: 7 + Math.round(t * 60) });
+  const cols = s.ti.meta.cols;
+  const rows = s.ti.meta.rows;
+  s.last = {
+    t,
+    windowMin,
+    key,
+    heat,
+    contrib: contrib!,
+    heatRecv: blockMean(heat, cols, rows, s.blocks),
+    th: detThresholds(ref.heat),
+    relStrength: sumOf(heat) / Math.max(sumOf(ref.heat), 1e-12),
+    thRecv: detThresholds(blockMean(ref.heat, cols, rows, s.blocks)),
+  };
   return s.last;
 }
 
-function topHotspots(heat: Float32Array, map: GridMap, k = 8, minSepM = 200): number[] {
+function sumOf(a: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i];
+  return s;
+}
+
+function topHotspots(heat: Float32Array, map: GridMap, minHeat: number, k = 8, minSepM = 200): number[] {
   const idx: number[] = [];
-  for (let i = 0; i < heat.length; i++) if (heat[i] > 0) idx.push(i);
+  for (let i = 0; i < heat.length; i++) if (heat[i] > minHeat) idx.push(i);
   idx.sort((a, b) => heat[b] - heat[a]);
   const out: number[] = [];
   for (const i of idx) {
     if (out.length >= k) break;
     const [x, y] = cellCenterLocal(map, i);
-    if (out.every((j) => {
-      const [x2, y2] = cellCenterLocal(map, j);
-      return Math.hypot(x - x2, y - y2) > minSepM;
-    }))
+    if (
+      out.every((j) => {
+        const [x2, y2] = cellCenterLocal(map, j);
+        return Math.hypot(x - x2, y - y2) > minSepM;
+      })
+    )
       out.push(i);
   }
   return out;
@@ -175,8 +210,7 @@ function topHotspots(heat: Float32Array, map: GridMap, k = 8, minSepM = 200): nu
 function heatAt(t: number, report: (f: number, l: string) => void): HeatResult {
   const s = st();
   const e = ensembleAt(t, report);
-  const th = detThresholds(e.heat);
-  return { t, heat: e.heat.slice(), lo: th.lo, hi: th.hi, hotspots: topHotspots(e.heat, s.ti.map) };
+  return { t, heat: e.heat.slice(), lo: e.th.lo, hi: e.th.hi, refHi: e.th.hi, relStrength: e.relStrength, hotspots: topHotspots(e.heat, s.ti.map, e.th.lo) };
 }
 
 function hourlySnapshots(report: (f: number, l: string) => void): Map<number, Float32Array> {
@@ -209,7 +243,7 @@ function deploy(t: number, teams: number, report: (f: number, l: string) => void
   const s = st();
   const e = ensembleAt(t, (f, l) => report(f * 0.55, l));
   report(0.56, 'Greedy deployment');
-  const detRecv = detectability(e.heatRecv, detThresholds(e.heatRecv));
+  const detRecv = detectability(e.heatRecv, e.thRecv);
   const deps = greedyDeploy({
     contrib: e.contrib,
     blocks: s.blocks,
@@ -222,7 +256,7 @@ function deploy(t: number, teams: number, report: (f: number, l: string) => void
   });
   const snaps = hourlySnapshots(report);
   return deps.map((d) => {
-    const windowScores = [...snaps.entries()].map(([hour, hr]) => ({ hour, score: snapshotScore(hr, d.recv) }));
+    const windowScores = [...snaps.entries()].map(([hour, hr]) => ({ hour, score: snapshotScore(hr, d.recv, e.thRecv) }));
     const best = windowScores.reduce((a, b) => (b.score > a.score ? b : a), windowScores[0]);
     let su = 0;
     let sv = 0;
@@ -264,11 +298,11 @@ function alert(x: number, y: number, t: number, report: (f: number, l: string) =
   return { zone, prob: recomputePosterior() };
 }
 
-function searched(x: number, y: number, radius: number, t: number, report: (f: number, l: string) => void): SearchResult {
+function searched(sector: SearchedSector, t0: number, t1: number, report: (f: number, l: string) => void): SearchResult {
   const s = st();
-  const e = ensembleAt(t, (f, l) => report(f * 0.85, l));
-  const th = detThresholds(e.heatRecv);
-  const r = searchUpdate({ sector: { x, y, radius }, contrib: e.contrib, blocks: s.blocks, heatRecv: e.heatRecv, th, map: s.ti.map });
+  const windowMin = Math.max(15, Math.round((t1 - t0) * 60));
+  const e = ensembleAt(t1, (f, l) => report(f * 0.9, l), windowMin);
+  const r = searchUpdate({ sector, contrib: e.contrib, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map });
   for (let i = 0; i < s.L.length; i++) s.L[i] *= r.factor[i];
   return { meanDet: r.meanDet, recheck: r.recheck, prob: recomputePosterior() };
 }
@@ -365,7 +399,7 @@ ctx.onmessage = (ev: MessageEvent<Envelope>) => {
         result = alert(req.x, req.y, req.t, report);
         break;
       case 'searched':
-        result = searched(req.x, req.y, req.radius ?? SEARCH.defaultRadiusM, req.t, report);
+        result = searched(req.sector, req.t0, req.t1, report);
         break;
       case 'resetSearch': {
         const s = st();

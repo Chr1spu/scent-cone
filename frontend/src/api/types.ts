@@ -20,7 +20,8 @@ export interface AreaConfig {
   overviewMeta: GridMeta;
   detailMeta: GridMeta;
   lkp: { x: number; y: number; lat: number; lon: number; label?: string };
-  truth: { x: number; y: number };
+  /** hidden subject location (demo only); null for user-chosen areas */
+  truth: { x: number; y: number } | null;
   focus: { x: number; y: number; size: number };
   profile: ProfileId;
   teams: number;

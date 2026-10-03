@@ -120,9 +120,26 @@ export async function backendHealthy(timeoutMs = 3000): Promise<{ ok: boolean; w
 
 interface AreaResponse {
   areaId: string;
+  timezone: string;
   overviewMeta: GridMeta;
   detailMeta: GridMeta;
+  lkp: { x: number; y: number; lat: number; lon: number };
 }
+
+/** What live mode should compute. Omitted fields default to the demo scenario. */
+export interface LiveRequest {
+  lat?: number;
+  lon?: number;
+  /** YYYY-MM-DD local date; ignored when `now` is set */
+  date?: string;
+  startHour?: number;
+  /** use the area's current local date and hour (real-time forecast run) */
+  now?: boolean;
+  /** focus segment centre (lat, lon) */
+  detailCenter?: [number, number] | null;
+}
+
+const HOURS_SPAN = 8;
 
 async function pollJob(jobId: string, onProgress: Progress): Promise<{ source?: string; method?: string; hours?: number[] }> {
   for (;;) {
@@ -138,14 +155,47 @@ async function pollJob(jobId: string, onProgress: Progress): Promise<{ source?: 
  * Live mode: same scenario as the demo config, data computed by the backend.
  * `detailCenter` (lat, lon) moves the focus segment ("Compute detail").
  */
-export async function loadLive(onProgress: Progress = () => {}, detailCenter?: [number, number]): Promise<AreaBundle> {
+export async function loadLive(onProgress: Progress = () => {}, req: LiveRequest = {}): Promise<AreaBundle> {
   onProgress(0.02, 'Contacting backend');
-  const base = await loadConfig();
+  const demo = await loadConfig();
+  const lat = req.lat ?? demo.lat;
+  const lon = req.lon ?? demo.lon;
+  const isDemoPlace = Math.abs(lat - demo.lat) < 1e-6 && Math.abs(lon - demo.lon) < 1e-6;
   const area = await fetchJson<AreaResponse>(`${API}/api/areas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lat: base.lat, lon: base.lon, timezone: base.timezone, detailCenter }),
+    body: JSON.stringify({ lat, lon, timezone: isDemoPlace ? demo.timezone : 'auto', detailCenter: req.detailCenter ?? undefined }),
   });
+  let date = req.date ?? demo.date;
+  let startHour = req.startHour ?? demo.startHour;
+  if (req.now) {
+    const now = await fetchJson<{ date: string; hour: number }>(`${API}/api/areas/${area.areaId}/now`);
+    date = now.date;
+    startHour = now.hour;
+  }
+  startHour = Math.max(0, Math.min(startHour, 23 - 1));
+  const endHour = Math.min(23, startHour + HOURS_SPAN);
+  const hours: number[] = [];
+  for (let h = startHour; h <= endHour; h++) hours.push(h);
+  const base: AreaConfig = isDemoPlace
+    ? { ...demo, date, startHour, endHour, windHours: hours, missingAt: date === demo.date && startHour === demo.startHour ? demo.missingAt : startHour }
+    : {
+        ...demo,
+        name: `Custom area ${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+        scenario: 'Custom search area: the last known point is the chosen location. Set the subject profile, then plan dog deployments.',
+        lat,
+        lon,
+        timezone: area.timezone,
+        date,
+        startHour,
+        endHour,
+        missingAt: startHour,
+        windHours: hours,
+        lkp: { ...area.lkp, label: 'Last known point' },
+        truth: null,
+        sources: {},
+        warnings: [],
+      };
   const om = area.overviewMeta;
   const dm = area.detailMeta;
   const id = area.areaId;
@@ -164,7 +214,6 @@ export async function loadLive(onProgress: Progress = () => {}, detailCenter?: [
     fetchJson<Weather>(`${API}/api/areas/${id}/weather?date=${base.date}`),
   ]);
   onProgress(0.5, 'Starting wind job');
-  const hours = base.windHours;
   const job = await fetchJson<{ jobId: string }>(`${API}/api/areas/${id}/wind`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -193,6 +242,7 @@ export async function loadLive(onProgress: Progress = () => {}, detailCenter?: [
     overviewMeta: om,
     detailMeta: dm,
     focus: { x: frame.cx, y: frame.cy, size: dm.cols * dm.cellSize },
+    utcOffsetSeconds: weather.utcOffsetSeconds,
     windSource: windninja ? 'windninja' : 'fallback',
     windMethod: res.method,
   };

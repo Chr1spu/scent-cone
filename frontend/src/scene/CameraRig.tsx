@@ -13,6 +13,8 @@ export function CameraRig() {
   const { camera } = useThree();
   const shot = useStore((s) => s.camera);
   const view = useStore((s) => s.view);
+  // the focus tool drags the segment square, so the camera must not orbit meanwhile
+  const focusTool = useStore((s) => s.tool === 'focus');
   const anim = useRef<{ p0: THREE.Vector3; t0: THREE.Vector3; p1: THREE.Vector3; t1: THREE.Vector3; start: number; dur: number } | null>(null);
 
   useEffect(() => {
@@ -46,6 +48,8 @@ export function CameraRig() {
     <OrbitControls
       ref={controls}
       makeDefault
+      enableRotate={!focusTool}
+      enablePan={!focusTool}
       enableDamping
       dampingFactor={0.08}
       maxPolarAngle={view === 'map' ? Math.PI * 0.32 : Math.PI * 0.47}

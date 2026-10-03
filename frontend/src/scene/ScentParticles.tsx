@@ -2,13 +2,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import type { AreaBundle } from '../api/types';
-import { VERT_EXAG } from '../config/constants';
 import { SCENT } from '../config/modelParams';
-import { sampleLocal } from '../geo/grid';
-import { createSim, makeStepEnv, step, type Sim, type StepEnv } from '../models/scent';
-import { buildTerrainInfo } from '../models/terrainInfo';
-import { timeSlot } from '../models/wind';
 import { useStore } from '../state/store';
+import type { ParticleMsg, ParticleReply } from '../workers/particles.worker';
 
 const vert = /* glsl */ `
 attribute float aStrength;
@@ -24,6 +20,7 @@ void main() {
 const frag = /* glsl */ `
 varying float vS;
 void main() {
+  if (vS <= 0.0) discard;
   vec2 d = gl_PointCoord - 0.5;
   float r = dot(d, d) * 4.0;
   if (r > 1.0) discard;
@@ -34,24 +31,22 @@ void main() {
 `;
 
 /**
- * Visible scent simulation (15k particles) on the main thread — a few ms per frame with typed
- * arrays and in-place buffer updates. Ensembles for the heatmap run in the worker.
+ * Visible scent simulation (15k particles). The physics runs in particles.worker.ts; this
+ * component only swaps the returned buffers into the geometry each frame (ping-pong transfer).
  */
 export function ScentParticles({ bundle }: { bundle: AreaBundle }) {
   const visible = useStore((s) => s.layers.scent);
   const release = useStore((s) => s.scentRelease);
   const prob = useStore((s) => s.prob);
-  const ti = useMemo(() => buildTerrainInfo(bundle.detail.meta, bundle.frame, bundle.detail.elev, bundle.detail.landcover), [bundle]);
+  const windVersion = useStore((s) => s.windVersion);
   const n = SCENT.visibleParticles;
-  const positions = useMemo(() => new Float32Array(n * 3), [n]);
-  const strength = useMemo(() => new Float32Array(n), [n]);
   const geo = useMemo(() => {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('aStrength', new THREE.BufferAttribute(strength, 1).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aStrength', new THREE.BufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage));
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
     return g;
-  }, [positions, strength]);
+  }, [n]);
   const mat = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -64,44 +59,72 @@ export function ScentParticles({ bundle }: { bundle: AreaBundle }) {
       }),
     [],
   );
-  const sim = useRef<Sim | null>(null);
   const pointsRef = useRef<THREE.Points>(null);
-  const env = useRef<{ se: StepEnv; t: number; windVersion: number } | null>(null);
-  const sunBuf = useMemo(() => new Uint8Array(ti.elev.length), [ti]);
+  const worker = useRef<Worker | null>(null);
+  // the spare buffer pair travels to the worker; null while a tick is in flight
+  const spare = useRef<{ pos: Float32Array; strength: Float32Array } | null>({ pos: new Float32Array(n * 3), strength: new Float32Array(n) });
+  const active = useRef(false);
 
   useEffect(() => {
-    if (!prob || !visible) return;
-    sim.current = createSim({ ti, prob: prob.detail, n, seed: 99 + release });
-    env.current = null;
+    const w = new Worker(new URL('../workers/particles.worker.ts', import.meta.url), { type: 'module' });
+    worker.current = w;
+    w.onmessage = (ev: MessageEvent<ParticleReply>) => {
+      const r = ev.data;
+      const posAttr = geo.attributes.position as THREE.BufferAttribute;
+      const sAttr = geo.attributes.aStrength as THREE.BufferAttribute;
+      // swap: the geometry's previous arrays (already uploaded to the GPU) become the spare pair
+      spare.current = { pos: posAttr.array as Float32Array, strength: sAttr.array as Float32Array };
+      posAttr.array = r.pos;
+      sAttr.array = r.strength;
+      posAttr.needsUpdate = true;
+      sAttr.needsUpdate = true;
+      active.current = r.active;
+    };
+    const c = bundle.config;
+    const s = useStore.getState();
+    const msg: ParticleMsg = {
+      type: 'init',
+      frame: bundle.frame,
+      detail: bundle.detail,
+      overview: bundle.overview,
+      weather: bundle.weather,
+      place: { date: c.date, lat: c.lat, lon: c.lon, utcOffsetSeconds: c.utcOffsetSeconds },
+      wind: s.activeWind ?? bundle.fallback,
+      n,
+    };
+    w.postMessage(msg);
+    return () => {
+      w.terminate();
+      worker.current = null;
+      // any in-flight buffers died with the worker
+      spare.current = { pos: new Float32Array(n * 3), strength: new Float32Array(n) };
+    };
+  }, [bundle, geo, n]);
+
+  useEffect(() => {
+    const w = worker.current;
+    const field = useStore.getState().activeWind;
+    if (w && field) w.postMessage({ type: 'setWind', wind: field } satisfies ParticleMsg);
+  }, [windVersion]);
+
+  useEffect(() => {
+    const w = worker.current;
+    if (!w) return;
+    if (!prob || !visible) {
+      w.postMessage({ type: 'stop' } satisfies ParticleMsg);
+      return;
+    }
+    w.postMessage({ type: 'release', prob: prob.detail, seed: 99 + release, t: useStore.getState().time } satisfies ParticleMsg);
     useStore.getState().set({ particleCount: n });
-  }, [ti, prob, release, visible, n]);
+  }, [prob, release, visible, n, bundle]);
 
   useFrame(() => {
-    if (pointsRef.current) pointsRef.current.visible = visible && !!sim.current;
-    if (!visible || !sim.current) return;
-    const s = useStore.getState();
-    const field = s.activeWind;
-    if (!field) return;
-    const dt = SCENT.dt;
-    const c = bundle.config;
-    if (!env.current || Math.abs(env.current.t - s.time) > 1 / 60 || env.current.windVersion !== s.windVersion) {
-      const place = { date: c.date, lat: c.lat, lon: c.lon, utcOffsetSeconds: c.utcOffsetSeconds };
-      env.current = { se: makeStepEnv(ti, field, place, bundle.weather, s.time, dt, undefined, sunBuf), t: s.time, windVersion: s.windVersion };
-    } else env.current.se.slot = timeSlot(field, s.time);
-    const p = sim.current;
-    for (let k = 0; k < SCENT.stepsPerFrame; k++) step(p, field, env.current.se, dt);
-    const lift = SCENT.drawHeightM;
-    for (let i = 0; i < p.n; i++) {
-      const x = p.x[i];
-      const y = p.y[i];
-      positions[i * 3] = x;
-      positions[i * 3 + 1] = (sampleLocal(ti.elev, ti.map, x, y) + lift) * VERT_EXAG;
-      positions[i * 3 + 2] = -y;
-      // fade in freshly emitted particles so recycling doesn't pop
-      strength[i] = p.strength[i] * Math.min(1, p.age[i] / 20);
-    }
-    (geo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-    (geo.attributes.aStrength as THREE.BufferAttribute).needsUpdate = true;
+    if (pointsRef.current) pointsRef.current.visible = visible && active.current;
+    const w = worker.current;
+    const pair = spare.current;
+    if (!visible || !w || !pair) return;
+    spare.current = null;
+    w.postMessage({ type: 'tick', t: useStore.getState().time, pos: pair.pos, strength: pair.strength } satisfies ParticleMsg, [pair.pos.buffer, pair.strength.buffer]);
   });
 
   return <points ref={pointsRef} geometry={geo} material={mat} visible={false} frustumCulled={false} renderOrder={6} />;

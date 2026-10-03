@@ -2,6 +2,9 @@ import { useState, type ReactNode } from 'react';
 import { PROFILES, type ProfileId } from '../config/modelParams';
 import { computeDetailAt, deployTeams, releaseScent, resetSearch, scheduleHeat, setOnsiteWind, setProfile } from '../state/controller';
 import { LAYER_LABELS, useStore, type LayerId, type Tool } from '../state/store';
+import { AreaPicker } from './AreaPicker';
+import { SearchOptions } from './SearchOptions';
+import { useIsMobile } from './useIsMobile';
 
 function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
@@ -30,7 +33,11 @@ function ToolButton({ tool, children, title }: { tool: Tool; children: ReactNode
 }
 
 export function ControlPanel() {
-  const [open, setOpen] = useState(true);
+  const mobile = useIsMobile();
+  const sheet = useStore((s) => s.mobileSheet);
+  const [desktopOpen, setDesktopOpen] = useState(true);
+  const open = mobile ? sheet === 'plan' : desktopOpen;
+  const setOpen = (v: boolean) => (mobile ? useStore.getState().set({ mobileSheet: v ? 'plan' : 'none' }) : setDesktopOpen(v));
   const [layersOpen, setLayersOpen] = useState(false);
   const bundle = useStore((s) => s.bundle);
   const profile = useStore((s) => s.profile);
@@ -51,10 +58,16 @@ export function ControlPanel() {
 
   if (!bundle) return null;
   return (
-    <aside className="panel pointer-events-auto absolute left-4 top-[84px] z-10 flex max-h-[calc(100%-200px)] w-[300px] max-w-[calc(100vw-32px)] flex-col overflow-hidden">
+    <aside
+      className={
+        mobile
+          ? `panel pointer-events-auto absolute left-2 z-20 flex flex-col overflow-hidden ${open ? 'right-2 top-[104px] bottom-[146px]' : 'top-[104px]'}`
+          : 'panel pointer-events-auto absolute left-4 top-[84px] z-10 flex max-h-[calc(100%-200px)] w-[300px] max-w-[calc(100vw-32px)] flex-col overflow-hidden'
+      }
+    >
       <button className="flex items-center justify-between px-4 py-2.5 text-left text-sm font-semibold text-white" onClick={() => setOpen(!open)} aria-expanded={open}>
         Search planning
-        <span className="text-slate-400">{open ? '−' : '+'}</span>
+        <span className="text-slate-400">{open ? (mobile ? '✕' : '−') : '+'}</span>
       </button>
       {open && (
         <div className="overflow-y-auto border-t border-white/5">
@@ -88,6 +101,10 @@ export function ControlPanel() {
             )}
           </Section>
 
+          <Section title="Search area (live)">
+            <AreaPicker key={bundle.config.areaId} />
+          </Section>
+
           {mode === 'live' && (
             <Section title="Focus segment (3 km)">
               <div className="flex gap-1.5">
@@ -98,7 +115,7 @@ export function ControlPanel() {
                   Compute detail
                 </button>
               </div>
-              {tool === 'focus' && <p className="mt-1.5 text-[11px] text-slate-400">Click the overview terrain to place the new square.</p>}
+              {tool === 'focus' && <p className="mt-1.5 text-[11px] text-slate-400">Drag on the terrain to move the new square (camera rotation is paused), then Compute detail.</p>}
             </Section>
           )}
 
@@ -141,7 +158,7 @@ export function ControlPanel() {
               <ToolButton tool="alert" title="Click where a dog alerted (at the slider time)">
                 ▲ Add alert
               </ToolButton>
-              <ToolButton tool="searched" title="Click a searched sector (150 m) with no alert">
+              <ToolButton tool="searched" title="Mark an area a team searched without an alert">
                 ◯ Searched
               </ToolButton>
               <button className="btn !px-2 text-xs" onClick={resetSearch}>
@@ -149,6 +166,7 @@ export function ControlPanel() {
               </button>
             </div>
             {tool === 'alert' && <p className="mt-1.5 text-[11px] text-pink-200/80">Click a pink radio marker (or anywhere in the segment) to log an alert.</p>}
+            {tool === 'searched' && <SearchOptions />}
           </Section>
 
           <Section title="On-site wind" right={onsite && <span className="text-[11px] text-sky-300">active {onsite.hour}:00</span>}>

@@ -64,7 +64,7 @@ function Instanced({ items, geometry, material }: { items: Placement[]; geometry
     });
     m.instanceMatrix.needsUpdate = true;
     m.computeBoundingSphere();
-  }, [items]);
+  }, [items, geometry, material]);
   return <instancedMesh ref={ref} args={[geometry, material, items.length]} frustumCulled={false} />;
 }
 
@@ -72,9 +72,13 @@ function Instanced({ items, geometry, material }: { items: Placement[]; geometry
 export function Vegetation({ bundle }: { bundle: AreaBundle }) {
   const visible = useStore((s) => s.layers.vegetation && s.view === 'scene');
   const placements = useMemo(() => placeTrees(bundle), [bundle]);
-  const coniferGlb = firstMesh(useModel('tree_conifer.glb'));
-  const broadGlb = firstMesh(useModel('tree_broadleaf.glb'));
-  const shrubGlb = firstMesh(useModel('shrub.glb'));
+  const coniferModel = useModel('tree_conifer.glb');
+  const broadModel = useModel('tree_broadleaf.glb');
+  const shrubModel = useModel('shrub.glb');
+  // extract once per loaded model (a new geometry would rebuild the instanced meshes)
+  const coniferGlb = useMemo(() => firstMesh(coniferModel), [coniferModel]);
+  const broadGlb = useMemo(() => firstMesh(broadModel), [broadModel]);
+  const shrubGlb = useMemo(() => firstMesh(shrubModel), [shrubModel]);
   const prims = useMemo(() => {
     // tree heights ~12 m (×VERT_EXAG so they read against exaggerated terrain)
     const h = 12 * VERT_EXAG;

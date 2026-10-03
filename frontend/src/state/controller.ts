@@ -2,10 +2,11 @@
  * Orchestration: loading, worker calls and derived state. UI components call these actions;
  * the store holds the results.
  */
-import { backendHealthy, loadLive, loadOffline } from '../api/loader';
+import { backendHealthy, loadLive, loadOffline, type LiveRequest } from '../api/loader';
 import type { AreaBundle } from '../api/types';
 import { DEMO_ALERT_TIMES, VERT_EXAG } from '../config/constants';
-import { PROFILES, SEARCH, TIME, type ProfileId } from '../config/modelParams';
+import { PROFILES, TIME, type ProfileId } from '../config/modelParams';
+import type { SearchedSector as SectorShape } from '../models/searchUpdate';
 import { toLocal, toWorld } from '../geo/grid';
 import { groundY } from '../geo/heights';
 import { sunAt, weatherAt } from '../models/env';
@@ -54,12 +55,15 @@ export async function boot() {
   await loadMode(health.ok ? 'live' : 'offline');
 }
 
-export async function loadMode(mode: 'offline' | 'live', detailCenter?: [number, number]) {
+/** Load the offline bundle, or a live area (location/date/focus from `req`, else the last request). */
+export async function loadMode(mode: 'offline' | 'live', req?: LiveRequest) {
+  const liveReq = req ?? get().liveRequest ?? {};
   const onProgress = (f: number, l: string) => set({ loadFrac: f, loadLabel: l });
   set({ status: 'loading', loadFrac: 0.02, loadLabel: mode === 'live' ? 'Loading from backend' : 'Loading offline demo bundle' });
   let bundle: AreaBundle;
   try {
-    bundle = mode === 'live' ? await loadLive(onProgress, detailCenter) : await loadOffline(onProgress);
+    bundle = mode === 'live' ? await loadLive(onProgress, liveReq) : await loadOffline(onProgress);
+    if (mode === 'live') set({ liveRequest: liveReq });
   } catch (e) {
     if (mode === 'live') {
       get().toast(`Live mode failed (${e instanceof Error ? e.message : e}); switched to offline demo.`, 'warn');
@@ -266,7 +270,7 @@ export async function addAlert(lx: number, ly: number) {
   const alerts = [...get().alerts, { id: alertId++, x: lx, y: ly, t, zone: r.zone }];
   set({ alerts, layers: { ...get().layers, alertZones: true, probability: true } });
   applyProb(r.prob);
-  if (alerts.length >= 2 && !get().revealed) {
+  if (alerts.length >= 2 && !get().revealed && get().bundle?.config.truth) {
     setTimeout(() => {
       set({ revealed: true, tool: 'none' });
       get().toast('Subject located inside the overlap of the back-traced zones', 'success');
@@ -279,13 +283,38 @@ export async function addAlert(lx: number, ly: number) {
 
 let searchId = 1;
 
-export async function markSearched(lx: number, ly: number, radius = SEARCH.defaultRadiusM) {
-  const t = get().time;
-  const r = await withBusy('Search update', () => worker().call<SearchResult>({ type: 'searched', x: lx, y: ly, radius, t }, progress('Search update')));
+/** Mark a sector searched with no alert over the window ending at the slider time. */
+export async function markSearched(sector: SectorShape) {
+  const { time, searchDraft, bundle } = get();
+  const t1 = time;
+  const t0 = Math.max(bundle?.config.startHour ?? TIME.start, t1 - searchDraft.windowMin / 60);
+  if (t1 - t0 < 0.2) {
+    get().toast('Move the time slider later: the search window must end after the first modelled hour.', 'warn');
+    return;
+  }
+  const r = await withBusy('Search update', () => worker().call<SearchResult>({ type: 'searched', sector, t0, t1 }, progress('Search update')));
   if (!r) return;
-  set({ searched: [...get().searched, { id: searchId++, x: lx, y: ly, radius, t, meanDet: r.meanDet, recheck: r.recheck }] });
+  set({ searched: [...get().searched, { id: searchId++, sector, t0, t1, meanDet: r.meanDet, recheck: r.recheck }], searchDraft: { ...get().searchDraft, pts: [] } });
   applyProb(r.prob);
   get().toast(r.recheck ? 'Sector searched in poor scent conditions — flagged for recheck' : 'Sector searched, no alert: probability shifted elsewhere', r.recheck ? 'warn' : 'info');
+}
+
+/** Searched tool click: circle sectors are immediate, polygons collect vertices. */
+export function searchClick(lx: number, ly: number): Promise<void> | void {
+  const d = get().searchDraft;
+  if (d.shape === 'circle') return markSearched({ kind: 'circle', x: lx, y: ly, radius: d.radius });
+  // clicking near the first vertex closes the polygon
+  if (d.pts.length >= 3 && Math.hypot(d.pts[0][0] - lx, d.pts[0][1] - ly) < 40) return finishPolygon();
+  set({ searchDraft: { ...d, pts: [...d.pts, [lx, ly]] } });
+}
+
+export function finishPolygon(): Promise<void> | void {
+  const d = get().searchDraft;
+  if (d.pts.length < 3) {
+    get().toast('A searched polygon needs at least 3 points.', 'warn');
+    return;
+  }
+  return markSearched({ kind: 'polygon', xs: d.pts.map((p) => p[0]), ys: d.pts.map((p) => p[1]) });
 }
 
 export async function resetSearch() {
@@ -298,6 +327,10 @@ export async function resetSearch() {
 export async function refreshSuggestions() {
   const b = get().bundle;
   if (!b) return;
+  if (!b.config.truth) {
+    set({ suggestions: [] });
+    return;
+  }
   const truth = toLocal(b.frame, b.config.truth.x, b.config.truth.y);
   try {
     const s = await worker().call<[number, number, number][]>({ type: 'suggestAlerts', truth, times: DEMO_ALERT_TIMES });
@@ -317,7 +350,8 @@ export function flyTo(step: number) {
   const b = get().bundle;
   if (!b) return;
   const [lx, ly] = get().lkp;
-  const truth = toLocal(b.frame, b.config.truth.x, b.config.truth.y);
+  // step 7 looks at the hidden subject (demo) or the current posterior peak
+  const truth = b.config.truth ? toLocal(b.frame, b.config.truth.x, b.config.truth.y) : (get().prob?.peak ?? [lx, ly]);
   const y0 = groundY(b, lx, ly);
   const shot = (tx: number, ty: number, dist: number, height: number, azDeg: number): State['camera'] => {
     const gy = groundY(b, tx, ty);
@@ -378,7 +412,7 @@ export async function computeDetailAt(lx: number, ly: number) {
   const [x, y] = toWorld(b.frame, lx, ly);
   const { lat, lon } = utmToLatLon(x, y, b.config.epsg);
   set({ focusPreview: null, tool: 'none' });
-  await loadMode('live', [lat, lon]);
+  await loadMode('live', { ...(get().liveRequest ?? {}), detailCenter: [lat, lon] });
 }
 
 /** Inverse UTM (WGS84) — enough precision for choosing a focus centre. */

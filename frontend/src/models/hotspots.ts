@@ -21,6 +21,10 @@ export interface DetThresholds {
   hi: number;
 }
 
+/**
+ * θ1/θ2 at the configured percentiles of nonzero heat. Called on a neutral-conditions
+ * reference run (see ENSEMBLE.reference*), which makes the thresholds absolute.
+ */
 export function detThresholds(heat: Float32Array): DetThresholds {
   const lo = percentileOfNonzero(heat, HOTSPOTS.detLoPct);
   const hi = Math.max(percentileOfNonzero(heat, HOTSPOTS.detHiPct), lo * 1.0001 + 1e-12);
@@ -188,9 +192,11 @@ export function greedyDeploy(inp: DeployInput): Deployment[] {
   return out;
 }
 
-/** Score of a receiver in an hourly snapshot (for best time windows). */
-export function snapshotScore(heatRecv: Float32Array, r: number): number {
-  const th = detThresholds(heatRecv);
+/**
+ * Score of a receiver in an hourly snapshot (for best time windows), against fixed absolute
+ * thresholds so hours compare: detectability, plus a small tie-break on raw strength.
+ */
+export function snapshotScore(heatRecv: Float32Array, r: number, th: DetThresholds): number {
   const h = heatRecv[r];
-  return smoothstep(th.lo, th.hi, h) + 0.1 * Math.min(h / (th.hi || 1), 3) / 3;
+  return smoothstep(th.lo, th.hi, h) + (0.1 * Math.min(h / (th.hi || 1), 3)) / 3;
 }

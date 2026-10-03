@@ -79,6 +79,27 @@ def fetch_weather(area: Area, date: str) -> dict:
     return res
 
 
+def resolve_timezone(lat: float, lon: float) -> str:
+    """IANA time zone for a point (Open-Meteo `timezone=auto`); 'UTC' if unreachable."""
+    try:
+        r = requests.get("https://api.open-meteo.com/v1/forecast",
+                         params={"latitude": lat, "longitude": lon, "timezone": "auto",
+                                 "current": "temperature_2m"}, timeout=15)
+        r.raise_for_status()
+        return r.json().get("timezone") or "UTC"
+    except Exception as e:  # noqa: BLE001
+        log.warning("timezone lookup failed: %s", e)
+        return "UTC"
+
+
+def local_now(tz: str) -> dt.datetime:
+    from zoneinfo import ZoneInfo
+    try:
+        return dt.datetime.now(ZoneInfo(tz))
+    except Exception:  # noqa: BLE001 - unknown zone / missing tzdata
+        return dt.datetime.now(dt.timezone.utc)
+
+
 def hour_entry(weather: dict, hour: int) -> dict:
     for h in weather["hours"]:
         if h["hour"] == hour:

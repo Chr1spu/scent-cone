@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { ProfileId } from '../config/modelParams';
 import type { AreaBundle } from '../api/types';
 import type { WindField } from '../models/wind';
+import type { SearchedSector as SectorShape } from '../models/searchUpdate';
 import type { DeploymentOut, HeatResult, ProbResult } from '../workers/protocol';
 
 export type LayerId =
@@ -45,12 +46,20 @@ export interface Alert {
 
 export interface SearchedSector {
   id: number;
-  x: number;
-  y: number;
-  radius: number;
-  t: number;
+  sector: SectorShape;
+  /** search window (local hours) */
+  t0: number;
+  t1: number;
   meanDet: number;
   recheck: boolean;
+}
+
+/** In-progress "mark searched" settings and polygon vertices. */
+export interface SearchDraft {
+  shape: 'circle' | 'polygon';
+  radius: number;
+  windowMin: number;
+  pts: [number, number][];
 }
 
 export interface Toast {
@@ -107,7 +116,12 @@ export interface State {
   debug: boolean;
   camera: CameraShot | null;
   focusPreview: [number, number] | null;
+  searchDraft: SearchDraft;
+  /** the last live-mode request (location, date, focus) so reloads keep it */
+  liveRequest: import('../api/loader').LiveRequest | null;
   hover: [number, number] | null;
+  /** phone layout: which sheet covers the map */
+  mobileSheet: 'none' | 'plan' | 'legend';
   fps: number;
   particleCount: number;
   set: (p: Partial<State>) => void;
@@ -165,7 +179,10 @@ export const useStore = create<State>((set, get) => ({
   debug: false,
   camera: null,
   focusPreview: null,
+  searchDraft: { shape: 'circle', radius: 150, windowMin: 60, pts: [] },
+  liveRequest: null,
   hover: null,
+  mobileSheet: 'none',
   fps: 0,
   particleCount: 0,
   set: (p) => set(p),

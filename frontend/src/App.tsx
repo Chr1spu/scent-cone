@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { TIME } from './config/modelParams';
 import { SceneRoot } from './scene/SceneRoot';
-import { boot, flyTo, scheduleHeat, setTime, setView } from './state/controller';
+import { boot, finishPolygon, flyTo, scheduleHeat, setTime, setView } from './state/controller';
 import { useStore } from './state/store';
 import { ControlPanel } from './ui/ControlPanel';
 import { Legend } from './ui/Legend';
@@ -38,12 +38,13 @@ function usePlayback() {
 function useKeyboard() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
       const s = useStore.getState();
       if (e.key >= '1' && e.key <= '7') flyTo(Number(e.key));
       else if (e.key === 'd' || e.key === 'D') s.set({ debug: !s.debug });
       else if (e.key === 'm' || e.key === 'M') setView(s.view === 'map' ? 'scene' : 'map');
-      else if (e.key === 'Escape') s.set({ tool: 'none', hover: null, focusPreview: null });
+      else if (e.key === 'Escape') s.set({ tool: 'none', hover: null, focusPreview: null, searchDraft: { ...s.searchDraft, pts: [] } });
+      else if (e.key === 'Enter' && s.tool === 'searched' && s.searchDraft.shape === 'polygon') finishPolygon();
       else if (e.key === ' ') {
         e.preventDefault();
         s.set({ playing: !s.playing });

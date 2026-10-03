@@ -15,7 +15,7 @@ from .encode import grid_response
 from .features import fetch_features
 from .landcover import fetch_landcover
 from .terrain import fetch_dem
-from .weather import fetch_weather
+from .weather import fetch_weather, local_now, resolve_timezone
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,7 +31,8 @@ class AreaRequest(BaseModel):
     overviewSizeM: float | None = None
     detailSizeM: float | None = None
     detailCenter: tuple[float, float] | None = None  # (lat, lon)
-    timezone: str = "America/New_York"
+    # IANA zone, or "auto" to look it up from the coordinates
+    timezone: str = "auto"
 
 
 class WindRequest(BaseModel):
@@ -66,13 +67,24 @@ def post_area(req: AreaRequest):
         kw["overview_size_m"] = req.overviewSizeM
     if req.detailSizeM:
         kw["detail_size_m"] = req.detailSizeM
-    a = create_area(req.lat, req.lon, req.timezone, detail_center=req.detailCenter, **kw)
+    tz = req.timezone
+    if not tz or tz == "auto":
+        tz = resolve_timezone(req.lat, req.lon)
+    a = create_area(req.lat, req.lon, tz, detail_center=req.detailCenter, **kw)
     return a.to_json()
 
 
 @app.get("/api/areas/{area_id}")
 def get_area(area_id: str):
     return _area(area_id).to_json()
+
+
+@app.get("/api/areas/{area_id}/now")
+def get_now(area_id: str):
+    """Current local date and hour in the area's time zone (for real-time runs)."""
+    a = _area(area_id)
+    now = local_now(a.timezone)
+    return {"date": now.date().isoformat(), "hour": now.hour, "minute": now.minute, "timezone": a.timezone}
 
 
 @app.get("/api/areas/{area_id}/terrain")

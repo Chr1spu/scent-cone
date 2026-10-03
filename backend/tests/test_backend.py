@@ -93,3 +93,24 @@ def test_health():
     c = TestClient(__import__("app.main", fromlist=["app"]).app)
     r = c.get("/api/health")
     assert r.status_code == 200 and r.json()["ok"] is True
+
+
+def test_now_endpoint_uses_area_timezone(tmp_cache):
+    from app.main import app
+    c = TestClient(app)
+    a = create_area(42.1589, -74.2047, "America/New_York")
+    r = c.get(f"/api/areas/{a.area_id}/now")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["timezone"] == "America/New_York"
+    assert 0 <= j["hour"] <= 23 and len(j["date"]) == 10
+
+
+def test_auto_timezone_lookup(tmp_cache, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(main, "resolve_timezone", lambda lat, lon: "Europe/Zurich")
+    c = TestClient(main.app)
+    r = c.post("/api/areas", json={"lat": 46.55, "lon": 8.0, "timezone": "auto"})
+    assert r.status_code == 200
+    assert r.json()["timezone"] == "Europe/Zurich"
+    assert r.json()["overviewMeta"]["crs"] == "EPSG:32632"

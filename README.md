@@ -22,6 +22,8 @@ This is a hackathon build. Every model is a tunable heuristic that is *plausible
 | `6` | Deploy teams: dog and handler at each point, upwind approach arrow, best time window, coverage |
 | `7` | Alerts: pick **Add alert**, click the two pink radio markers, and the back-traced zones overlap where the child is revealed |
 
+On phones the planning panel and legend open as sheets from the buttons under the top bar.
+
 Also: `Space` play/pause, `M` map/scene view, `D` debug overlay (FPS, particles, wind source, hour, worker status), `Esc` cancels a tool.
 
 ## Run it
@@ -43,7 +45,10 @@ docker compose up --build          # backend on :8000 (BACKEND_PORT=8010 to chan
 cd frontend && npm run dev         # Vite proxies /api to VITE_BACKEND_URL (default http://localhost:8000)
 ```
 
-Live mode fetches USGS 3DEP terrain, NLCD land cover, OpenStreetMap features and Open-Meteo weather, then runs WindNinja for every hour from 14:00 to 22:00 as a background job. **Move focus**, then **Compute detail**, recomputes a new 3 km segment (about 75 s cold, instant when cached).
+Live mode fetches USGS 3DEP terrain, NLCD land cover, OpenStreetMap features and Open-Meteo weather, then runs WindNinja for every hour of an 8-hour window as a background job (about a minute for a new area, instant when cached).
+
+* **Search area (live):** type any latitude/longitude (it becomes the last known point), a date and a start hour, or tick **Today, from the current hour** for a real-time run. For today, WindNinja is initialised from NOAA's live **HRRR 3 km forecast**; past dates use Open-Meteo hourly wind (domain-average initialisation). Time zones are looked up from the coordinates.
+* **Move focus → Compute detail:** drag the 3 km square somewhere else in the 12 km area and recompute it.
 
 ### Rebuild the demo bundle
 
@@ -57,7 +62,8 @@ Without Docker (fallback wind only): `cd backend && python -m venv .venv && .ven
 ### Tests
 
 ```bash
-cd frontend && npm test            # vitest: wind conversion, bilinear, probability, advection, decay, backtrace, deployment
+cd frontend && npm test            # vitest: wind conversion, bilinear, probability, advection, decay, backtrace, deployment,
+                                   #   nose-height wind, continuous plumes, ridge shadows, neutral reference
 cd backend && pytest -q            # grid metadata, WindNinja .asc parsing, cache hits, fallback wind
 ```
 
@@ -78,9 +84,10 @@ cd backend && pytest -q            # grid metadata, WindNinja .asc parsing, cach
 
 * **Probability** (`frontend/src/models/probability.ts`): log-normal distance from the LKP by profile (Lost Person Behavior medians), × linear-feature attraction, × 0.2 behind water and cliffs (least-cost detour ratio), × slope penalty, water = 0, plus a ±brush.
 * **Wind** (`models/wind.ts`, `backend/app/windninja.py`): WindNinja mass-conserving solver with diurnal winds at 2 m. It uses HRRR initialisation when the forecast exists, and otherwise domain-average initialisation from Open-Meteo for each hour. The direction convention was checked against real WindNinja output. A slope-wind fallback (forecast ×0.7, downslope at night, upslope on sunny slopes) is implemented in both Python and TypeScript.
-* **Scent** (`models/scent.ts`): 15k visible particles. Each step advects them with wind, adds a random walk (K = 0.5 + 0.3·U), halves advection in forest, pools them in calm hollows, decays them with humidity/temperature/sun, and lofts some off sunlit slopes. Six perturbed-wind ensemble members (±20°, ×0.7–1.3) run in a Web Worker to build the 60-minute heatmap.
-* **Deployment** (`models/hotspots.ts`): source (100 m) → receiver (50 m) contribution tracking, detectability from heat percentiles, greedy picks with dog POD 0.7, 300 m spacing, slope ≤ 35°, no water, and at least 20 m from cliffs. Best time window comes from hourly snapshots.
-* **Alerts and negative updates** (`models/triangulation.ts`, `models/searchUpdate.ts`): a 60-minute backward particle trace gives each alert's zone, and the posterior is prior · Π(ε + zone). A searched sector with no alert lowers each source by POD = 0.7 × the share of its scent that reached the sector, and flags sectors searched in poor scent conditions for a recheck.
+* **Scent** (`models/scent.ts`): scent is released **continuously** from every likely location (births spread over a 40-minute particle lifetime), so the heatmap is a steady plume, not one drifting puff. Particles move with the wind **at dog-nose height (0.6 m)**: the 2 m model wind scaled by a log wind profile over open ground (≈0.71×) or a sub-canopy factor in forest (0.3×). Each step adds a random walk (K = 0.5 + 0.3·U), pools particles in calm hollows, decays them with humidity/temperature/sun, and lofts some off sunlit slopes. Sunlight accounts for slope aspect **and ridge shadows** (ray-marched over the terrain). Six perturbed-wind ensemble members (±20°, ×0.7–1.3) build the 60-minute heatmap in a Web Worker; the 15k on-screen particles run in a second worker.
+* **Detectability** is absolute: θ1/θ2 are the 70th/95th percentiles of a reference run with the same wind but neutral scent conditions, so heat, sun and lofting really lower it. The time slider's "Scent" rating shows scent present as a share of that reference.
+* **Deployment** (`models/hotspots.ts`): source (100 m) → receiver (50 m) contribution tracking, detectability against the reference thresholds, greedy picks with dog POD 0.7, 300 m spacing, slope ≤ 35°, no water, and at least 20 m from cliffs. Best time window comes from hourly snapshots.
+* **Alerts and negative updates** (`models/triangulation.ts`, `models/searchUpdate.ts`): a 60-minute backward particle trace gives each alert's zone, and the posterior is prior · Π(ε + zone). A searched sector (circle or drawn polygon, 30–120 minute window) with no alert lowers each source by POD = 0.7 × the share of its scent that reached the sector, and flags sectors searched in poor scent conditions for a recheck.
 
 All tunable numbers are in `frontend/src/config/modelParams.ts` and `backend/app/config.py`.
 
@@ -92,7 +99,8 @@ frontend/   Vite + React 18 + TypeScript + three / R3F / drei + zustand + Tailwi
   src/workers/  compute worker (probability, ensembles, deployment, back-tracing)
   src/scene/    terrain shader (contours, hillshade, draped overlays), wind, scent, teams, markers
   public/demo/  offline demo bundle (generated)
-  public/models/ optional .glb models (dog, handler, trees, tent, …); primitives are used if missing
+  public/models/ low-poly .glb models (generated by scripts/make_models.mjs; replace freely, they are
+                 rescaled to real-world size on load; primitives are used if a file is missing)
 backend/    FastAPI + WindNinja CLI (Docker), terrain/landcover/OSM/weather pipeline, build_demo.py
 ```
 
@@ -100,6 +108,14 @@ backend/    FastAPI + WindNinja CLI (Docker), terrain/landcover/OSM/weather pipe
 
 * **Frontend (static):** `.github/workflows/pages.yml` publishes to GitHub Pages. It deploys on every push to `main` (live at https://chr1spu.github.io/scent-cone/). `netlify.toml`, `frontend/vercel.json` and `render.yaml` are ready for Netlify, Vercel or Render. Set `VITE_API_BASE` to a hosted backend URL to enable live mode.
 * **Backend (Docker):** `backend/fly.toml` (Fly.io) or `render.yaml` (Render). It needs about 2 GB RAM for WindNinja. Alternatively, run `docker compose up` on a laptop and expose it with a Cloudflare Tunnel.
+
+## Known limitations
+
+* The public site runs the offline demo only; live mode needs the backend running somewhere (see Deploying).
+* A modelled window stays within one calendar day (start hour + 8 h, capped at 23:00).
+* A new heatmap takes about 2 s to compute after the slider moves (it runs in a worker, so the UI stays responsive).
+* The fallback slope-wind model uses slope aspect for sunlit slopes but not ridge shadows (the scent model does use shadows).
+* Lost-person distances for children 7–12 and dementia in wilderness are placeholders to tune.
 
 ## Data sources and credits
 

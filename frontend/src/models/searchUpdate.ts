@@ -4,17 +4,33 @@ import { smoothstep, type GridMap } from '../geo/grid';
 import type { DetThresholds } from './hotspots';
 import type { BlockIndex } from './scent';
 
-export interface SearchedSector {
-  x: number;
-  y: number;
-  radius: number;
+/** A searched area: a circle around a point, or a polygon (local metres). */
+export type SearchedSector =
+  | { kind: 'circle'; x: number; y: number; radius: number }
+  | { kind: 'polygon'; xs: number[]; ys: number[] };
+
+export function sectorContains(s: SearchedSector, x: number, y: number): boolean {
+  if (s.kind === 'circle') return Math.hypot(x - s.x, y - s.y) <= s.radius;
+  let inside = false;
+  for (let i = 0, j = s.xs.length - 1; i < s.xs.length; j = i++) {
+    const yi = s.ys[i];
+    const yj = s.ys[j];
+    if (yi > y !== yj > y && x < ((s.xs[j] - s.xs[i]) * (y - yi)) / (yj - yi) + s.xs[i]) inside = !inside;
+  }
+  return inside;
+}
+
+export function sectorCentroid(s: SearchedSector): [number, number] {
+  if (s.kind === 'circle') return [s.x, s.y];
+  const n = s.xs.length;
+  return [s.xs.reduce((a, b) => a + b, 0) / n, s.ys.reduce((a, b) => a + b, 0) / n];
 }
 
 export interface SearchUpdateInput {
   sector: SearchedSector;
   contrib: Float32Array;
   blocks: BlockIndex;
-  /** receiver-level heat for the search window and its detectability thresholds */
+  /** receiver-level heat for the search window and absolute (reference) detectability thresholds */
   heatRecv: Float32Array;
   th: DetThresholds;
   map: GridMap;
@@ -53,10 +69,11 @@ export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
   const inArea: number[] = [];
   let nearest = 0;
   let nearestD = Infinity;
+  const [cx, cy] = sectorCentroid(sector);
   for (let r = 0; r < b.nRecv; r++) {
     const [x, y] = recvCenter(b, map, r);
-    const d = Math.hypot(x - sector.x, y - sector.y);
-    if (d <= sector.radius) inArea.push(r);
+    const d = Math.hypot(x - cx, y - cy);
+    if (sectorContains(sector, x, y)) inArea.push(r);
     if (d < nearestD) {
       nearestD = d;
       nearest = r;
@@ -74,7 +91,7 @@ export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
     if (total > 0) for (const r of inArea) if (heatRecv[r] > th.lo) reached += contrib[r * b.nSrc + s];
     let pod = total > 0 ? HOTSPOTS.dogPOD * (reached / total) : 0;
     const [sx, sy] = srcCenter(b, map, s);
-    if (Math.hypot(sx - sector.x, sy - sector.y) <= sector.radius) pod = Math.max(pod, HOTSPOTS.dogPOD * meanDet);
+    if (sectorContains(sector, sx, sy)) pod = Math.max(pod, HOTSPOTS.dogPOD * meanDet);
     podSrc[s] = Math.min(pod, HOTSPOTS.dogPOD);
   }
   const factor = new Float32Array(b.srcOf.length);

@@ -2,7 +2,7 @@
 import { SCENT, TRIANGULATION } from '../config/modelParams';
 import { boxBlur } from '../geo/grid';
 import { Rng } from './rng';
-import { LC, type TerrainInfo } from './terrainInfo';
+import type { TerrainInfo } from './terrainInfo';
 import { makeMember, perturb, sampleUVFrac, timeSlot, type WindField } from './wind';
 
 export interface BacktraceInput {
@@ -51,16 +51,13 @@ export function backtrace(inp: BacktraceInput): Float32Array {
       const fr = -Y[i] * inv + oy;
       sampleUVFrac(field, slot, cols, rows, fc, fr, uv);
       perturb(members[i], uv);
-      const speed = Math.hypot(uv[0], uv[1]);
       const cell = Math.min(rows - 1, Math.max(0, Math.round(fr))) * cols + Math.min(cols - 1, Math.max(0, Math.round(fc)));
-      let adv = ti.landcover[cell] === LC.forest ? SCENT.forestSlow : 1;
-      let damp = 1;
-      if (speed < SCENT.calmWind && ti.localLow[cell]) {
-        adv *= SCENT.calmDamp;
-        damp = SCENT.calmDamp;
-      }
-      let x = X[i] - uv[0] * dt * adv;
-      let y = Y[i] - uv[1] * dt * adv;
+      // same nose-height wind and pooling as the forward model
+      const k = ti.noseFactor[cell];
+      const speed = Math.hypot(uv[0], uv[1]) * k;
+      const damp = speed < SCENT.calmWind && ti.localLow[cell] ? SCENT.calmDamp : 1;
+      let x = X[i] - uv[0] * k * dt * damp;
+      let y = Y[i] - uv[1] * k * dt * damp;
       if (turb) {
         const sig = Math.sqrt(2 * (SCENT.turbK0 + SCENT.turbKPerWind * speed) * dt) * damp;
         x += sig * rng.normal();
@@ -139,9 +136,9 @@ export function driftPoint(ti: TerrainInfo, field: WindField, x: number, y: numb
     const fr = -y * m.inv + m.oy;
     sampleUVFrac(field, timeSlot(field, t + (k * dt) / 3600), m.cols, m.rows, fc, fr, uv);
     const cell = Math.min(m.rows - 1, Math.max(0, Math.round(fr))) * m.cols + Math.min(m.cols - 1, Math.max(0, Math.round(fc)));
-    const adv = ti.landcover[cell] === LC.forest ? SCENT.forestSlow : 1;
-    x += uv[0] * dt * adv;
-    y += uv[1] * dt * adv;
+    const f = ti.noseFactor[cell];
+    x += uv[0] * dt * f;
+    y += uv[1] * dt * f;
   }
   return { x, y };
 }

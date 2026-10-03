@@ -8,6 +8,7 @@ import { toLocal } from '../geo/grid';
 import { toScene } from '../geo/heights';
 import { fmtTime } from '../state/controller';
 import { useStore } from '../state/store';
+import { sectorCentroid, type SearchedSector as SectorShape } from '../models/searchUpdate';
 import { Beacon, DrapedLine, Label, MODEL_SCALE, circlePts } from './primitives';
 import { useModel } from './useModel';
 
@@ -43,11 +44,16 @@ function LkpMarker({ bundle }: { bundle: AreaBundle }) {
 }
 
 function ChildMarker({ bundle }: { bundle: AreaBundle }) {
+  if (!bundle.config.truth) return null;
+  return <ChildMarkerAt bundle={bundle} truthXY={[bundle.config.truth.x, bundle.config.truth.y]} />;
+}
+
+function ChildMarkerAt({ bundle, truthXY }: { bundle: AreaBundle; truthXY: [number, number] }) {
   const revealed = useStore((s) => s.revealed);
   const glb = useModel('child_marker.glb');
   const group = useRef<THREE.Group>(null);
   const start = useRef<number | null>(null);
-  const truth = toLocal(bundle.frame, bundle.config.truth.x, bundle.config.truth.y);
+  const truth = toLocal(bundle.frame, truthXY[0], truthXY[1]);
   const p = toScene(bundle, truth[0], truth[1]);
   useFrame(({ clock }) => {
     if (!group.current) return;
@@ -88,6 +94,24 @@ function ChildMarker({ bundle }: { bundle: AreaBundle }) {
   );
 }
 
+function outline(sector: SectorShape): [number, number][] {
+  if (sector.kind === 'circle') return circlePts(sector.x, sector.y, sector.radius);
+  const pts = sector.xs.map((x, i) => [x, sector.ys[i]] as [number, number]);
+  return [...densify(pts), pts[0]];
+}
+
+/** Insert points every ~20 m so polygon edges follow the terrain. */
+function densify(pts: [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 20));
+    for (let k = 0; k < n; k++) out.push([a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+  }
+  return out;
+}
+
 function SearchedSectors({ bundle }: { bundle: AreaBundle }) {
   const searched = useStore((s) => s.searched);
   const visible = useStore((s) => s.layers.searched);
@@ -96,17 +120,32 @@ function SearchedSectors({ bundle }: { bundle: AreaBundle }) {
     <group>
       {searched.map((s) => {
         const color = s.recheck ? COLORS.recheck : COLORS.searched;
-        const p = toScene(bundle, s.x, s.y, 10);
+        const [cx, cy] = sectorCentroid(s.sector);
+        const ring = outline(s.sector);
         return (
           <group key={s.id}>
-            <DrapedLine bundle={bundle} pts={circlePts(s.x, s.y, s.radius)} color={color} lift={4} />
-            <DrapedLine bundle={bundle} pts={circlePts(s.x, s.y, s.radius * 0.97)} color={color} lift={4} opacity={0.4} />
-            <Label position={p} tone={s.recheck ? 'warn' : 'default'}>
-              Searched {fmtTime(s.t - 1)}–{fmtTime(s.t)} · no alert{s.recheck ? ' · ⚠ recheck (poor scent)' : ''}
+            <DrapedLine bundle={bundle} pts={ring} color={color} lift={4} />
+            <Label position={toScene(bundle, cx, cy, 10)} tone={s.recheck ? 'warn' : 'default'}>
+              Searched {fmtTime(s.t0)}–{fmtTime(s.t1)} · no alert{s.recheck ? ' · ⚠ recheck (poor scent)' : ''}
             </Label>
           </group>
         );
       })}
+    </group>
+  );
+}
+
+function SearchDraftPreview({ bundle }: { bundle: AreaBundle }) {
+  const tool = useStore((s) => s.tool);
+  const draft = useStore((s) => s.searchDraft);
+  const hover = useStore((s) => s.hover);
+  if (tool !== 'searched' || draft.shape !== 'polygon' || draft.pts.length === 0) return null;
+  const pts: [number, number][] = hover ? [...draft.pts, hover] : draft.pts;
+  const first = toScene(bundle, draft.pts[0][0], draft.pts[0][1]);
+  return (
+    <group>
+      {pts.length >= 2 && <DrapedLine bundle={bundle} pts={densify(pts).concat([pts[pts.length - 1]])} color={COLORS.searched} lift={5} />}
+      <Beacon position={first} color={COLORS.searched} height={30} radius={12} />
     </group>
   );
 }
@@ -138,8 +177,10 @@ function Suggestions({ bundle }: { bundle: AreaBundle }) {
 function BrushCursor({ bundle }: { bundle: AreaBundle }) {
   const tool = useStore((s) => s.tool);
   const hover = useStore((s) => s.hover);
-  const pts = useMemo(() => (hover ? circlePts(hover[0], hover[1], tool === 'searched' ? 150 : PROBABILITY.brushRadiusM, 48) : null), [hover, tool]);
-  if (!pts || !(tool === 'brushUp' || tool === 'brushDown' || tool === 'searched')) return null;
+  const draft = useStore((s) => s.searchDraft);
+  const pts = useMemo(() => (hover ? circlePts(hover[0], hover[1], tool === 'searched' ? draft.radius : PROBABILITY.brushRadiusM, 48) : null), [hover, tool, draft.radius]);
+  const circleSearch = tool === 'searched' && draft.shape === 'circle';
+  if (!pts || !(tool === 'brushUp' || tool === 'brushDown' || circleSearch)) return null;
   return <DrapedLine bundle={bundle} pts={pts} color={tool === 'brushDown' ? '#ff8a8a' : tool === 'searched' ? COLORS.searched : '#7ef0ff'} lift={5} />;
 }
 
@@ -149,6 +190,7 @@ export function Markers({ bundle }: { bundle: AreaBundle }) {
       <LkpMarker bundle={bundle} />
       <ChildMarker bundle={bundle} />
       <SearchedSectors bundle={bundle} />
+      <SearchDraftPreview bundle={bundle} />
       <Suggestions bundle={bundle} />
       <BrushCursor bundle={bundle} />
     </group>

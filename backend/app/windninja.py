@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
+import json
 import logging
 import os
 import re
@@ -274,4 +275,10 @@ def run_windninja(area: Area, date: str, hours: list[int], progress=lambda f, m:
         elif "domainAverage" not in method:
             method += "+domainAverage"
     progress(1.0, "WindNinja done")
+    # remember how the winds were produced, so later cached requests report it
+    method_file = area.dir / f"wind_method_{date}.json"
+    if method == "cached" and method_file.exists():
+        method = json.loads(method_file.read_text()).get("method", method)
+    elif method != "cached":
+        method_file.write_text(json.dumps({"method": method}))
     return {"source": "windninja", "method": method, "hours": sorted(set(done))}

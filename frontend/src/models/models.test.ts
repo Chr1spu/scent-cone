@@ -6,7 +6,7 @@ import { deployableCells, detThresholds, detectability, blockMean, greedyDeploy,
 import { buildStaticLayers, barrierFactor, computeProbability, resampleToDetail } from './probability';
 import { backtrace, posterior } from './triangulation';
 import { blockIndex, createSim, makeStepEnv, runEnsemble, step, type StepEnv } from './scent';
-import { buildTerrainInfo, type TerrainInfo } from './terrainInfo';
+import { buildTerrainInfo, LC, noseWindFactor, shadowMask, sunlitMask, type TerrainInfo } from './terrainInfo';
 import { computeFallbackWind, metToUV, sampleWind, smoothedGradients, timeSlot, uvToMet, IDENTITY_MEMBER, type WindField } from './wind';
 
 function meta(n: number, cell: number): GridMeta {
@@ -133,7 +133,7 @@ describe('scent particles', () => {
     return se;
   }
 
-  it('advects u*dt in uniform wind with K = 0', () => {
+  it('advects u·dt at nose height (2 m wind × log-profile factor) with K = 0', () => {
     SCENT.turbK0 = 0;
     SCENT.turbKPerWind = 0;
     const ti = flatTerrain();
@@ -146,9 +146,10 @@ describe('scent particles', () => {
     const dt = 2;
     const se = env(ti, field, dt);
     for (let k = 0; k < 10; k++) step(sim, field, se, dt);
+    const k = noseWindFactor(LC.open);
     for (let i = 0; i < sim.n; i++) {
-      expect(sim.x[i] - x0[i]).toBeCloseTo(1.5 * dt * 10, 3);
-      expect(sim.y[i] - y0[i]).toBeCloseTo(-0.5 * dt * 10, 3);
+      expect(sim.x[i] - x0[i]).toBeCloseTo(1.5 * k * dt * 10, 3);
+      expect(sim.y[i] - y0[i]).toBeCloseTo(-0.5 * k * dt * 10, 3);
     }
   });
 
@@ -189,7 +190,8 @@ describe('scent particles', () => {
 describe('backward trace', () => {
   it('returns to the source in uniform wind', () => {
     const ti = flatTerrain(200, 10);
-    const u = 0.25; // 900 m in 60 min (no forest on flat open terrain)
+    // 2 m wind chosen so the nose-height wind carries scent 900 m in 60 min on open ground
+    const u = 0.25 / noseWindFactor(LC.open);
     const field = uniformField(200, u, 0);
     // source at (-300, 0); scent reaches (+600, 0) after 60 min
     const zone = backtrace({ ti, field, t: 20, x: 600 - 1e-3, y: 0, particles: 300, perturbWind: false, turbulence: false });
@@ -245,5 +247,75 @@ describe('fallback wind mirror', () => {
     const i = 20 * n + 20;
     expect(w.u[i]).toBeLessThan(-0.5);
     expect(Math.abs(w.v[i])).toBeLessThan(1e-3);
+  });
+});
+
+describe('nose-height wind', () => {
+  it('slows wind near the ground, most under a forest canopy', () => {
+    const open = noseWindFactor(LC.open);
+    expect(open).toBeGreaterThan(0.65);
+    expect(open).toBeLessThan(0.75);
+    expect(noseWindFactor(LC.water)).toBeGreaterThan(open); // smoother surface
+    expect(noseWindFactor(LC.shrub)).toBeLessThan(open);
+    expect(noseWindFactor(LC.forest)).toBeLessThan(noseWindFactor(LC.developed));
+  });
+});
+
+describe('continuous release', () => {
+  it('forms a steady plume: strongest near the source, fading downwind', () => {
+    const ti = flatTerrain(100, 10);
+    const field = uniformField(100, 1, 0); // east
+    const prob = new Float32Array(100 * 100);
+    prob[50 * 100 + 20] = 1; // source at column 20
+    const { heat } = runEnsemble({ ti, field, place, weather, prob, tEnd: 21, members: 1, particles: 3000, dt: 10 });
+    const band = (c0: number, c1: number) => {
+      let s = 0;
+      for (let r = 45; r <= 55; r++) for (let c = c0; c <= c1; c++) s += heat[r * 100 + c];
+      return s;
+    };
+    const near = band(20, 30);
+    const mid = band(45, 55);
+    const far = band(80, 90);
+    expect(near).toBeGreaterThan(0);
+    expect(near).toBeGreaterThan(mid);
+    expect(mid).toBeGreaterThan(far);
+    expect(far).toBeGreaterThan(0); // continuous: scent all along the plume, not one puff
+  });
+
+  it('is normalised per particle, so different particle counts agree', () => {
+    const ti = flatTerrain(60, 10);
+    const field = uniformField(60, 0.5, 0);
+    const prob = new Float32Array(60 * 60).fill(1 / 3600);
+    const sum = (a: Float32Array) => a.reduce((x, y) => x + y, 0);
+    const a = runEnsemble({ ti, field, place, weather, prob, tEnd: 21, members: 1, particles: 1000, dt: 15 });
+    const b = runEnsemble({ ti, field, place, weather, prob, tEnd: 21, members: 1, particles: 4000, dt: 15 });
+    expect(sum(b.heat) / sum(a.heat)).toBeGreaterThan(0.9);
+    expect(sum(b.heat) / sum(a.heat)).toBeLessThan(1.1);
+  });
+
+  it('lofting on sunny slopes lowers scent below the neutral reference', () => {
+    // gentle slope, sunlit in the early afternoon (sun ~40° up), light wind
+    const ti = flatTerrain(60, 10, (_c, r) => 500 + r * 3);
+    const field = uniformField(60, 0.5, 0);
+    const prob = new Float32Array(60 * 60).fill(1 / 3600);
+    const sum = (a: Float32Array) => a.reduce((x, y) => x + y, 0);
+    const sunny = runEnsemble({ ti, field, place, weather, prob, tEnd: 14.5, members: 1, particles: 2000, dt: 15 });
+    const neutral = runEnsemble({ ti, field, place, weather, prob, tEnd: 14.5, members: 1, particles: 2000, dt: 15, neutral: true });
+    expect(sum(sunny.heat)).toBeLessThan(0.8 * sum(neutral.heat));
+  });
+});
+
+describe('terrain shadows', () => {
+  it('a ridge shades the ground on its far side from a low sun', () => {
+    // ridge 300 m high along column 70 (east); flat ground west of it
+    const ti = flatTerrain(100, 10, (c) => (c >= 70 && c <= 72 ? 800 : 500));
+    const lowEast: [number, number, number] = [Math.cos(0.1), 0, Math.sin(0.1)]; // sun ~6° above the east horizon
+    const sh = shadowMask(ti, lowEast);
+    expect(sh[50 * 100 + 60]).toBe(1); // just west of the ridge: shaded
+    expect(sh[50 * 100 + 90]).toBe(0); // east of the ridge: lit
+    const high: [number, number, number] = [0, 0, 1];
+    expect(shadowMask(ti, high)[50 * 100 + 60]).toBe(0);
+    expect(sunlitMask(ti, lowEast)[50 * 100 + 60]).toBe(0);
+    expect(sunlitMask(ti, lowEast)[50 * 100 + 90]).toBe(1);
   });
 });

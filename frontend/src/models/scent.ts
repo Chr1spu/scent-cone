@@ -5,7 +5,7 @@
 import { ENSEMBLE, SCENT } from '../config/modelParams';
 import { decayTau, envAt, type Place, type Weather } from './env';
 import { Rng } from './rng';
-import { LC, sunlitMask, type TerrainInfo } from './terrainInfo';
+import { sunlitMask, type TerrainInfo } from './terrainInfo';
 import { IDENTITY_MEMBER, makeMember, perturb, sampleUVFrac, timeSlot, type EnsembleMember, type TimeSlot, type WindField } from './wind';
 
 export interface Sources {
@@ -44,6 +44,11 @@ export interface SimParams {
   n: number;
   seed: number;
   sources?: Sources;
+  /**
+   * Continuous release: births are spread uniformly over this many seconds (negative age =
+   * not yet emitted). 0 releases everything at once (a single puff).
+   */
+  staggerS?: number;
 }
 
 export function createSim(p: SimParams): Sim {
@@ -58,7 +63,11 @@ export function createSim(p: SimParams): Sim {
     ti: p.ti,
     rng: new Rng(p.seed),
   };
-  for (let i = 0; i < p.n; i++) emit(sim, i);
+  const stagger = p.staggerS ?? 0;
+  for (let i = 0; i < p.n; i++) {
+    emit(sim, i);
+    if (stagger > 0) sim.age[i] = -sim.rng.next() * stagger;
+  }
   return sim;
 }
 
@@ -97,10 +106,26 @@ export interface StepEnv {
   sunUp: boolean;
   decayShade: number;
   decaySun: number;
+  /** neutral scent conditions (reference runs): no sun effects, base decay */
+  neutral: boolean;
 }
 
 /** Per-time environment for stepping; recompute when t changes noticeably. */
-export function makeStepEnv(ti: TerrainInfo, field: WindField, place: Place, weather: Weather, t: number, dt: number, member: EnsembleMember = IDENTITY_MEMBER, sunlitBuf?: Uint8Array): StepEnv {
+export function makeStepEnv(
+  ti: TerrainInfo,
+  field: WindField,
+  place: Place,
+  weather: Weather,
+  t: number,
+  dt: number,
+  member: EnsembleMember = IDENTITY_MEMBER,
+  sunlitBuf?: Uint8Array,
+  neutral = false,
+): StepEnv {
+  if (neutral) {
+    const d = Math.exp(-dt / SCENT.baseTauS);
+    return { slot: timeSlot(field, t), member, sunlit: sunlitBuf ?? new Uint8Array(ti.elev.length), sunHigh: false, sunUp: false, decayShade: d, decaySun: d, neutral };
+  }
   const env = envAt(place, weather, t);
   const sunlit = sunlitMask(ti, env.sun.dir, sunlitBuf);
   const sunHigh = env.sun.elevation > SCENT.sunHighElev;
@@ -112,6 +137,7 @@ export function makeStepEnv(ti: TerrainInfo, field: WindField, place: Place, wea
     sunUp: env.sun.elevation > 0,
     decayShade: Math.exp(-dt / decayTau(env, false)),
     decaySun: Math.exp(-dt / decayTau(env, sunHigh)),
+    neutral,
   };
 }
 
@@ -129,25 +155,32 @@ export interface Accum {
 
 const uvTmp = new Float32Array(2);
 
+/**
+ * One step for every particle: advect with the nose-height wind, turbulent random walk,
+ * calm pooling, decay and lofting; recycle particles that leave the grid, fade out or exceed
+ * their lifetime. Particles with negative age are not yet emitted and do not move.
+ */
 export function step(sim: Sim, field: WindField, se: StepEnv, dt: number, acc?: Accum): void {
   const m = sim.ti.map;
   const { cols, rows, inv, ox, oy } = m;
-  const lc = sim.ti.landcover;
+  const nose = sim.ti.noseFactor;
   const low = sim.ti.localLow;
   const { x: X, y: Y, strength: S, age: A, source: SRC } = sim;
   const rng = sim.rng;
   const sunlit = se.sunlit;
   const twoDt = 2 * dt;
+  const lifetime = SCENT.lifetimeS;
   for (let i = 0; i < sim.n; i++) {
+    if (A[i] < 0) {
+      A[i] += dt;
+      continue;
+    }
     let x = X[i];
     let y = Y[i];
     let fc = x * inv + ox;
     let fr = -y * inv + oy;
     sampleUVFrac(field, se.slot, cols, rows, fc, fr, uvTmp);
     perturb(se.member, uvTmp);
-    const u = uvTmp[0];
-    const v = uvTmp[1];
-    const speed = Math.sqrt(u * u + v * v);
     let c = Math.round(fc);
     let r = Math.round(fr);
     if (c < 0) c = 0;
@@ -155,23 +188,26 @@ export function step(sim: Sim, field: WindField, se: StepEnv, dt: number, acc?: 
     if (r < 0) r = 0;
     else if (r >= rows) r = rows - 1;
     let cell = r * cols + c;
-    let adv = 1;
-    let damp = 1;
-    if (lc[cell] === LC.forest) adv = SCENT.forestSlow;
-    if (speed < SCENT.calmWind && low[cell]) {
-      adv *= SCENT.calmDamp;
-      damp = SCENT.calmDamp;
-    }
+    const k = nose[cell];
+    const u = uvTmp[0] * k; // wind at nose height
+    const v = uvTmp[1] * k;
+    const speed2m = Math.sqrt(uvTmp[0] * uvTmp[0] + uvTmp[1] * uvTmp[1]);
+    const speed = speed2m * k;
+    const damp = speed < SCENT.calmWind && low[cell] ? SCENT.calmDamp : 1;
     const K = SCENT.turbK0 + SCENT.turbKPerWind * speed;
     const sig = Math.sqrt(K * twoDt) * damp;
-    x += u * dt * adv + sig * rng.normal();
-    y += v * dt * adv + sig * rng.normal();
-    let s = S[i] * (sunlit[cell] && se.sunHigh ? se.decaySun : se.decayShade);
-    if (se.sunUp && sunlit[cell] && speed < SCENT.liftWind) s *= 1 - SCENT.liftPerS * dt;
+    x += u * dt * damp + sig * rng.normal();
+    y += v * dt * damp + sig * rng.normal();
+    let s = S[i];
+    if (se.neutral) s *= se.decayShade;
+    else {
+      s *= sunlit[cell] && se.sunHigh ? se.decaySun : se.decayShade;
+      if (se.sunUp && sunlit[cell] && speed2m < SCENT.liftWind) s *= 1 - SCENT.liftPerS * dt;
+    }
     A[i] += dt;
     fc = x * inv + ox;
     fr = -y * inv + oy;
-    if (fc < -0.5 || fr < -0.5 || fc > cols - 0.5 || fr > rows - 0.5 || s < SCENT.minStrength) {
+    if (fc < -0.5 || fr < -0.5 || fc > cols - 0.5 || fr > rows - 0.5 || s < SCENT.minStrength || A[i] > lifetime) {
       emit(sim, i);
       continue;
     }
@@ -235,6 +271,8 @@ export interface EnsembleInput {
   windowMin?: number;
   seed?: number;
   blocks?: BlockIndex;
+  /** neutral scent conditions (reference run for absolute detectability thresholds) */
+  neutral?: boolean;
   onProgress?: (f: number) => void;
 }
 
@@ -243,7 +281,12 @@ export interface EnsembleResult {
   contrib?: Float32Array;
 }
 
-/** runEnsemble: perturbed-wind members over a window ending at tEnd, averaged into a heat grid. */
+/**
+ * runEnsemble: perturbed-wind members over a window ending at tEnd, averaged into a heat grid.
+ * Scent is released continuously (births staggered over one lifetime from the window start).
+ * Heat is normalised per particle and member, so runs with different particle counts compare:
+ * it approximates the time-weighted share of all released scent present in each cell.
+ */
 export function runEnsemble(inp: EnsembleInput): EnsembleResult {
   const members = inp.members ?? ENSEMBLE.members;
   const n = inp.particles ?? ENSEMBLE.particlesPerMember;
@@ -261,16 +304,16 @@ export function runEnsemble(inp: EnsembleInput): EnsembleResult {
   const memberRng = new Rng(seed ^ 0x9e3779b9);
   for (let mi = 0; mi < members; mi++) {
     const member = members === 1 ? IDENTITY_MEMBER : makeMember(memberRng);
-    const sim = createSim({ ti: inp.ti, prob: inp.prob, n, seed: seed + 101 * mi, sources });
+    const sim = createSim({ ti: inp.ti, prob: inp.prob, n, seed: seed + 101 * mi, sources, staggerS: Math.min(SCENT.lifetimeS, windowS) });
     let se: StepEnv | null = null;
     for (let k = 0; k < steps; k++) {
       const t = inp.tEnd - (windowS - k * dt) / 3600;
-      if (k % envEvery === 0 || !se) se = makeStepEnv(inp.ti, inp.field, inp.place, inp.weather, t, dt, member, sunBuf);
+      if (k % envEvery === 0 || !se) se = makeStepEnv(inp.ti, inp.field, inp.place, inp.weather, t, dt, member, sunBuf, inp.neutral);
       else se.slot = timeSlot(inp.field, t);
       const ageS = (steps - k) * dt;
       const acc: Accum = {
         conc: heat,
-        weight: Math.pow(2, -ageS / halfLife) / members,
+        weight: Math.pow(2, -ageS / halfLife) / (members * n),
         contrib,
         recvOf: inp.blocks?.recvOf,
         srcOf: inp.blocks?.srcOf,

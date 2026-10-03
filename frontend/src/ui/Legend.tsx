@@ -3,6 +3,7 @@ import { COLORS, LANDCOVER_CLASSES } from '../config/constants';
 import { FEATURE_COLORS } from '../scene/FeatureLines';
 import { fmtTime } from '../state/controller';
 import { useStore } from '../state/store';
+import { useIsMobile } from './useIsMobile';
 
 function Ramp({ from, to, stops, labels }: { from?: string; to?: string; stops?: string[]; labels: [string, string] }) {
   const bg = stops ? `linear-gradient(90deg, ${stops.join(',')})` : `linear-gradient(90deg, ${from}, ${to})`;
@@ -31,11 +32,35 @@ export function Legend() {
   const deployments = useStore((s) => s.deployments);
   const bundle = useStore((s) => s.bundle);
   const windSource = useStore((s) => s.windSource);
+  const mobile = useIsMobile();
+  const sheet = useStore((s) => s.mobileSheet);
   const [assumptions, setAssumptions] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   if (!bundle) return null;
+  if (mobile && sheet !== 'legend') {
+    if (sheet === 'plan') return null;
+    return (
+      <button
+        className="panel pointer-events-auto absolute right-2 top-[104px] z-20 px-3 py-2 text-xs font-semibold text-white"
+        onClick={() => useStore.getState().set({ mobileSheet: 'legend' })}
+      >
+        Legend{deployments.length ? ` · ${deployments.length} teams` : ''}
+      </button>
+    );
+  }
   return (
-    <aside className="pointer-events-auto absolute right-4 top-[84px] z-10 flex max-h-[calc(100%-200px)] w-[270px] max-w-[calc(100vw-32px)] flex-col gap-3 overflow-y-auto">
+    <aside
+      className={
+        mobile
+          ? 'pointer-events-auto absolute bottom-[146px] left-2 right-2 top-[104px] z-20 flex flex-col gap-3 overflow-y-auto'
+          : 'pointer-events-auto absolute right-4 top-[84px] z-10 flex max-h-[calc(100%-200px)] w-[270px] max-w-[calc(100vw-32px)] flex-col gap-3 overflow-y-auto'
+      }
+    >
+      {mobile && (
+        <button className="panel px-4 py-2 text-left text-xs font-semibold text-white" onClick={() => useStore.getState().set({ mobileSheet: 'none' })}>
+          ✕ Close legend
+        </button>
+      )}
       {deployments.length > 0 && (
         <div className="panel px-4 py-3">
           <h3 className="label mb-2">Deployment plan</h3>
@@ -129,9 +154,10 @@ export function Legend() {
             <li>Scent physics are simplified, tunable heuristics — plausible and explainable, not validated.</li>
             <li>Probability: log-normal distance from LKP by profile (Lost Person Behavior medians), boosted near trails/streams, reduced across water/cliffs and on steep slopes.</li>
             <li>Wind: {windSource === 'windninja' ? 'USFS WindNinja (mass-conserving, diurnal) at 2 m' : 'forecast wind ×0.7 plus a slope-wind term (downslope at night, upslope on sunny slopes)'}.</li>
-            <li>Scent: particles advect with wind, random-walk turbulence, slow in forest, pool in calm hollows, decay faster when hot/dry/sunny, and loft off sunlit slopes.</li>
-            <li>Deployment: greedy coverage with dog POD 0.7; teams 300 m apart on slopes ≤ 35°.</li>
-            <li>Alerts: 60-minute backward trace; zones multiply into the probability map.</li>
+            <li>Scent is released continuously from every likely location and moves with the wind at dog-nose height (0.6 m): about 70% of the 2 m wind over open ground, 30% under forest canopy. It spreads by random-walk turbulence, pools in calm hollows, decays faster when hot, dry or sunny, and lofts off sunlit slopes (ridge shadows included).</li>
+            <li>Detectability is absolute: thresholds come from a run with the same wind but neutral scent conditions, so poor conditions really lower it (the "Scent" rating shows the ratio).</li>
+            <li>Deployment: greedy coverage with dog POD 0.7; teams 300 m apart on slopes ≤ 35°, away from water and cliffs.</li>
+            <li>Alerts: 60-minute backward trace; zones multiply into the probability map. Searched sectors lower probability by how much of each location&apos;s scent reached them during the search window.</li>
             <li>Data: {Object.values(bundle.config.sources ?? {}).filter((v, i, a) => a.indexOf(v) === i).join(' · ') || 'demo bundle'}.</li>
           </ul>
         )}

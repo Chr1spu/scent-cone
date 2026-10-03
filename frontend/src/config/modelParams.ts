@@ -64,6 +64,13 @@ export const ENSEMBLE = {
   dt: 12,
   /** cheap per-hour snapshots for best time windows */
   hourlyParticles: 3000,
+  /**
+   * Detectability thresholds are absolute: θ1/θ2 are the 70th/95th percentiles of a reference
+   * run with the same wind but neutral scent conditions (no sun, no lofting, 1800 s decay).
+   * Poor conditions (heat, sun, lofting) therefore really lower detectability.
+   */
+  referenceMembers: 2,
+  referenceParticles: 3000,
 };
 
 export const SCENT = {
@@ -72,7 +79,7 @@ export const SCENT = {
   stepsPerFrame: 3,
   turbK0: 0.5,
   turbKPerWind: 0.3,
-  forestSlow: 0.5,
+  /** below this nose-height wind a particle in a local hollow is "pooling" */
   calmWind: 0.3,
   calmDamp: 0.3,
   /** a cell is a local low if lower than at least this many of 8 neighbours */
@@ -80,12 +87,33 @@ export const SCENT = {
   baseTauS: 1800,
   sunFactor: 0.7,
   sunHighElev: 20,
+  /** lofting off sunlit slopes when the 2 m wind is below this (m/s) */
   liftWind: 2,
   liftPerS: 0.002,
   minStrength: 0.01,
+  /**
+   * Particles represent a continuous release: births are staggered over the first lifetime and a
+   * particle is re-emitted at its source once older than this. Scent older than ~40 min is mostly
+   * decayed or lofted anyway (see baseTauS / liftPerS).
+   */
+  lifetimeS: 2400,
   accumHalfLifeS: 600,
-  /** dog nose height used when drawing particles (m above ground) */
-  drawHeightM: 2,
+};
+
+/**
+ * Dogs smell at nose height (~0.6 m), but WindNinja and the fallback model give wind at 2 m.
+ * Particles are moved by the 2 m wind scaled to nose height: a neutral log profile
+ * u(z) ∝ ln(z / z0) over open ground, and a sub-canopy attenuation factor in forest
+ * (WindNinja reports its output height above the vegetation, so in forest the 2 m wind is
+ * effectively above the canopy).
+ */
+export const NOSE = {
+  heightM: 0.6,
+  refHeightM: 2,
+  /** aerodynamic roughness length z0 (m) per land-cover class */
+  z0: { water: 0.0002, open: 0.03, wetland: 0.05, shrub: 0.1, developed: 0.3 },
+  /** wind under a closed canopy as a fraction of the model wind (typically 0.2–0.4) */
+  forestFactor: 0.3,
 };
 
 export const HOTSPOTS = {
