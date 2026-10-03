@@ -1,5 +1,7 @@
 # Scent Cone
 
+**Live demo (offline mode, runs entirely in the browser):** https://chr1spu.github.io/scent-cone/
+
 **Where and when to deploy air-scent dogs.** Scent Cone shows a search area as interactive 3D terrain, computes terrain-adjusted wind with the US Forest Service's **WindNinja**, simulates how human scent drifts from where a missing person might be, and recommends dog-team deployment points. When dogs alert, or search a sector and find nothing, it updates where the person probably is.
 
 > Core idea: convert a map of **where the person might be** into a map of **where a dog could detect them**.
@@ -96,7 +98,7 @@ backend/    FastAPI + WindNinja CLI (Docker), terrain/landcover/OSM/weather pipe
 
 ## Deploying
 
-* **Frontend (static):** `.github/workflows/pages.yml` publishes to GitHub Pages. Enable it in Settings → Pages → Source "GitHub Actions"; Pages on a private repo needs a paid plan. `netlify.toml`, `frontend/vercel.json` and `render.yaml` are ready for Netlify, Vercel or Render. Set `VITE_API_BASE` to a hosted backend URL to enable live mode.
+* **Frontend (static):** `.github/workflows/pages.yml` publishes to GitHub Pages. It deploys on every push to `main` (live at https://chr1spu.github.io/scent-cone/). `netlify.toml`, `frontend/vercel.json` and `render.yaml` are ready for Netlify, Vercel or Render. Set `VITE_API_BASE` to a hosted backend URL to enable live mode.
 * **Backend (Docker):** `backend/fly.toml` (Fly.io) or `render.yaml` (Render). It needs about 2 GB RAM for WindNinja. Alternatively, run `docker compose up` on a laptop and expose it with a Cloudflare Tunnel.
 
 ## Data sources and credits
