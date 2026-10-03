@@ -129,9 +129,9 @@ export function buildStaticLayers(meta: GridMeta, m: GridMap, elev: Float32Array
 // ---------------------------------------------------------------- barriers (cost-distance)
 
 /** Least-cost distance (m) from a start cell, 8-connected; barrier cells cost `barrierCost`×. */
-export function costDistance(barrier: Uint8Array, cols: number, rows: number, cell: number, start: number, barrierCost: number): Float32Array {
+export function costDistance(barrier: Uint8Array, cols: number, rows: number, cell: number, start: number, barrierCost: number): Float64Array {
   const n = cols * rows;
-  const dist = new Float32Array(n).fill(Infinity);
+  const dist = new Float64Array(n).fill(Infinity);
   // binary heap of (key, idx) with lazy deletion
   let size = 0;
   let cap = 1 << 16;

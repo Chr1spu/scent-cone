@@ -1,5 +1,5 @@
 /** Time-varying environment: interpolated weather and sun position. */
-import SunCalc from 'suncalc';
+import * as SunCalc from 'suncalc';
 import { SCENT } from '../config/modelParams';
 
 export interface WeatherHour {
@@ -50,10 +50,10 @@ export function localToDate(date: string, hour: number, utcOffsetSeconds: number
 
 export function sunAt(place: Place, hour: number): SunState {
   const p = SunCalc.getPosition(localToDate(place.date, hour, place.utcOffsetSeconds), place.lat, place.lon);
-  // suncalc azimuth: radians from south, positive toward west
-  const az = ((p.azimuth * 180) / Math.PI + 180 + 360) % 360;
-  const el = (p.altitude * 180) / Math.PI;
-  const er = p.altitude;
+  // suncalc >= 2: altitude and azimuth in degrees, azimuth clockwise from north
+  const az = (p.azimuth + 360) % 360;
+  const el = p.altitude;
+  const er = (el * Math.PI) / 180;
   const ar = (az * Math.PI) / 180;
   return { elevation: el, azimuth: az, dir: [Math.cos(er) * Math.sin(ar), Math.cos(er) * Math.cos(ar), Math.sin(er)] };
 }
