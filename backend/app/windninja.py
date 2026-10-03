@@ -21,9 +21,9 @@ import numpy as np
 from . import config
 from .areas import Area, cell_centers
 from .landcover import fetch_landcover, dominant_vegetation
-from .slopewind import fallback_wind, local_to_utc, met_to_uv, sun_position, terrain_gradients
+from .slopewind import fallback_wind, local_to_utc, met_to_uv, shadow_mask, sun_position, terrain_gradients
 from .terrain import fetch_dem, windninja_dem
-from .weather import fetch_weather, hour_entry
+from .weather import fetch_weather, hour_entry, split_hour
 
 log = logging.getLogger(__name__)
 
@@ -139,7 +139,9 @@ def collect_outputs(out_dir: Path) -> dict[tuple[str, int], tuple[Path, Path]]:
 
 
 def wind_path(area: Area, date: str, hour: int, kind: str) -> Path:
-    return area.dir / f"wind_{kind}_{date}_{hour:02d}.npy"
+    """`hour` may exceed 23 (a window that runs past midnight); files use the calendar date."""
+    d, h = split_hour(date, hour)
+    return area.dir / f"wind_{kind}_{d}_{h:02d}.npy"
 
 
 def load_wind(area: Area, date: str, hour: int, kind: str) -> np.ndarray | None:
@@ -150,18 +152,23 @@ def load_wind(area: Area, date: str, hour: int, kind: str) -> np.ndarray | None:
 def compute_fallback(area: Area, date: str, hours: list[int], weather: dict | None = None,
                      overrides: dict | None = None) -> None:
     dem, _ = fetch_dem(area, "detail")
-    weather = weather or fetch_weather(area, date)
+    ov, _ = fetch_dem(area, "overview")
+    by_date: dict[str, dict] = {date: weather} if weather else {}
     grads = terrain_gradients(dem, area.detail["cellSize"])
     for hr in hours:
         p = wind_path(area, date, hr, "fallback")
         if p.exists() and not overrides:
             continue
-        w = hour_entry(weather, hr)
+        d, h = split_hour(date, hr)
+        if d not in by_date:
+            by_date[d] = fetch_weather(area, d)
+        w = hour_entry(by_date[d], h)
         spd, dr = w["windSpeed"], w["windDirection"]
         if overrides and hr in overrides:
             spd, dr = overrides[hr]
-        el, az = sun_position(area.lat, area.lon, local_to_utc(date, hr, weather["utcOffsetSeconds"]))
-        u, v = fallback_wind(dem, area.detail["cellSize"], spd, dr, el, az, grads)
+        el, az = sun_position(area.lat, area.lon, local_to_utc(d, h, by_date[d]["utcOffsetSeconds"]))
+        shaded = shadow_mask(dem, area.detail, el, az, (ov, area.overview)) if el > 0 else None
+        u, v = fallback_wind(dem, area.detail["cellSize"], spd, dr, el, az, grads, shaded)
         np.save(p, np.stack([u, v]))
 
 
@@ -193,52 +200,72 @@ def _base_opts(area: Area, dem_path: Path, out_dir: Path, veg: str) -> dict:
     }
 
 
+def _abs_hour(date: str, d: str, hr: int) -> int:
+    """Calendar (date, hour) -> hours since the start date's midnight."""
+    return (dt.date.fromisoformat(d) - dt.date.fromisoformat(date)).days * 24 + hr
+
+
 def _store_outputs(area: Area, date: str, outputs: dict, wanted: list[int], default_hour: int | None = None) -> list[int]:
+    """Save WindNinja outputs for the wanted hours (hours since `date` midnight, may exceed 23)."""
     stored = []
     for (d, hr), (vel, ang) in outputs.items():
         if hr == -1 and default_hour is not None:
-            d, hr = date, default_hour
-        if d != date or hr not in wanted:
+            h = default_hour
+        elif hr == -1:
+            continue
+        else:
+            h = _abs_hour(date, d, hr)
+        if h not in wanted:
             continue
         spd, hs = parse_asc(vel)
         ang_a, _ = parse_asc(ang)
         u, v = speed_dir_to_uv_grid(spd, ang_a)
         uu, vv = resample_to_grid(u, hs, area.detail), resample_to_grid(v, hs, area.detail)
-        np.save(wind_path(area, date, hr, "windninja"), np.stack([uu, vv]))
-        stored.append(hr)
+        np.save(wind_path(area, date, h, "windninja"), np.stack([uu, vv]))
+        stored.append(h)
     return stored
 
 
 def run_windninja(area: Area, date: str, hours: list[int], progress=lambda f, m: None) -> dict:
-    """Run WindNinja for the given local hours. Returns {"source": ..., "hours": [...]}."""
+    """Run WindNinja for local hours counted from `date` midnight (may run past 23:00).
+    Returns {"source": ..., "method": ..., "hours": [...]}."""
     if not available():
         raise RuntimeError("WindNinja CLI not available")
     dem_path, _ = windninja_dem(area)
     lc, _ = fetch_landcover(area, "detail")
     veg = dominant_vegetation(lc)
-    weather = fetch_weather(area, date)
+    weather_by_date: dict[str, dict] = {}
+
+    def weather_for(d: str) -> dict:
+        if d not in weather_by_date:
+            weather_by_date[d] = fetch_weather(area, d)
+        return weather_by_date[d]
+
     todo = [h for h in hours if not wind_path(area, date, h, "windninja").exists()]
     done: list[int] = [h for h in hours if h not in todo]
     method = "cached"
     # 1) weather-model initialisation (only possible for current/future dates)
     model = choose_wx_model()
-    start_utc = local_to_utc(date, min(hours), weather["utcOffsetSeconds"])
+    d_first, h_first = split_hour(date, min(hours))
+    start_utc = local_to_utc(d_first, h_first, weather_for(d_first)["utcOffsetSeconds"])
     hours_ahead = (start_utc - dt.datetime.utcnow()).total_seconds() / 3600
     if todo and model and -1 < hours_ahead < 40:
         try:
             progress(0.05, f"WindNinja: downloading {model}")
-            out_dir = area.dir / f"wn_wx_{date}"
+            out_dir = area.dir / f"wn_wx_{date}_{min(todo):02d}"
             out_dir.mkdir(exist_ok=True)
-            d0 = dt.date.fromisoformat(date)
+            d0, h0 = split_hour(date, min(todo))
+            d1, h1 = split_hour(date, max(todo))
+            s0, s1 = dt.date.fromisoformat(d0), dt.date.fromisoformat(d1)
             opts = _base_opts(area, dem_path, out_dir, veg)
             opts.update({
                 "initialization_method": "wxModelInitialization",
                 "wx_model_type": model,
                 "forecast_duration": int(max(hours_ahead, 0) + max(hours) - min(hours) + 3),
-                "start_year": d0.year, "start_month": d0.month, "start_day": d0.day,
-                "start_hour": min(todo), "start_minute": 0,
-                "stop_year": d0.year, "stop_month": d0.month, "stop_day": d0.day,
-                "stop_hour": max(todo), "stop_minute": 0,
+                "start_year": s0.year, "start_month": s0.month, "start_day": s0.day,
+                "start_hour": h0, "start_minute": 0,
+                "stop_year": s1.year, "stop_month": s1.month, "stop_day": s1.day,
+                "stop_hour": h1, "stop_minute": 0,
             })
             cfg = out_dir / "run.cfg"
             write_cfg(cfg, opts)
@@ -251,11 +278,12 @@ def run_windninja(area: Area, date: str, hours: list[int], progress=lambda f, m:
             log.warning("wx model init failed, falling back to domain average: %s", e)
     # 2) domain-average initialisation per hour from Open-Meteo
     for i, hr in enumerate(todo):
-        progress(0.1 + 0.9 * i / max(len(todo), 1), f"WindNinja domain-average {hr:02d}:00")
-        w = hour_entry(weather, hr)
-        out_dir = area.dir / f"wn_da_{date}_{hr:02d}"
+        d, h = split_hour(date, hr)
+        progress(0.1 + 0.9 * i / max(len(todo), 1), f"WindNinja domain-average {d} {h:02d}:00")
+        w = hour_entry(weather_for(d), h)
+        out_dir = area.dir / f"wn_da_{d}_{h:02d}"
         out_dir.mkdir(exist_ok=True)
-        d0 = dt.date.fromisoformat(date)
+        dd = dt.date.fromisoformat(d)
         opts = _base_opts(area, dem_path, out_dir, veg)
         opts.update({
             "initialization_method": "domainAverageInitialization",
@@ -264,7 +292,7 @@ def run_windninja(area: Area, date: str, hours: list[int], progress=lambda f, m:
             "input_wind_height": 10.0, "units_input_wind_height": "m",
             "uni_air_temp": round(float(w["temperature"]), 1), "air_temp_units": "C",
             "uni_cloud_cover": round(float(w["cloudCover"]), 0), "cloud_cover_units": "percent",
-            "year": d0.year, "month": d0.month, "day": d0.day, "hour": hr, "minute": 0,
+            "year": dd.year, "month": dd.month, "day": dd.day, "hour": h, "minute": 0,
         })
         cfg = out_dir / "run.cfg"
         write_cfg(cfg, opts)

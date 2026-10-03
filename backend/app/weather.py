@@ -100,6 +100,25 @@ def local_now(tz: str) -> dt.datetime:
         return dt.datetime.now(dt.timezone.utc)
 
 
+def fetch_weather_span(area: Area, date: str, days: int = 1) -> dict:
+    """Hourly weather for `days` consecutive days; hours continue past 23 (24 = next midnight)."""
+    first = fetch_weather(area, date)
+    if days <= 1:
+        return first
+    out = dict(first, hours=list(first["hours"]))
+    d0 = dt.date.fromisoformat(date)
+    for k in range(1, days):
+        nxt = fetch_weather(area, (d0 + dt.timedelta(days=k)).isoformat())
+        out["hours"] += [dict(h, hour=h["hour"] + 24 * k) for h in nxt["hours"]]
+    return out
+
+
+def split_hour(date: str, hour: int) -> tuple[str, int]:
+    """(start date, hour that may exceed 23) -> (calendar date, hour of day)."""
+    d = dt.date.fromisoformat(date) + dt.timedelta(days=hour // 24)
+    return d.isoformat(), hour % 24
+
+
 def hour_entry(weather: dict, hour: int) -> dict:
     for h in weather["hours"]:
         if h["hour"] == hour:

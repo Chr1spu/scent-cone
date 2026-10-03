@@ -124,3 +124,36 @@ def test_public_site_may_call_local_server():
                                           "Access-Control-Request-Private-Network": "true"})
     assert r.status_code == 200
     assert r.headers.get("access-control-allow-private-network") == "true"
+
+
+def test_shadow_mask_ridge():
+    from app.slopewind import shadow_mask
+    n = 100
+    elev = np.full((n, n), 500.0)
+    elev[:, 70:73] = 800.0  # north-south ridge in the east
+    meta = {"originX": 0.0, "originY": 1000.0, "cellSize": 10.0, "cols": n, "rows": n}
+    low_east = shadow_mask(elev, meta, sun_elev=6.0, sun_az=90.0)
+    assert low_east[50, 60]          # just west of the ridge: in its shadow
+    assert not low_east[50, 90]      # east of the ridge: lit
+    assert not shadow_mask(elev, meta, sun_elev=80.0, sun_az=90.0)[50, 60]
+    assert shadow_mask(elev, meta, sun_elev=-3.0, sun_az=90.0).all()  # night
+
+
+def test_fallback_no_upslope_on_shaded_slope():
+    # slope facing east, sun low in the east: lit -> upslope (westward, u<0); shaded -> none
+    x = np.arange(40) * 10.0
+    elev = np.tile(400 - x * 0.2, (40, 1)).astype(np.float32)  # rises to the west, faces east
+    u_lit, _ = fallback_wind(elev, 10.0, 0.0, 0.0, sun_elev=25.0, sun_az=90.0)
+    u_shd, _ = fallback_wind(elev, 10.0, 0.0, 0.0, sun_elev=25.0, sun_az=90.0, shaded=np.ones_like(elev, dtype=bool))
+    assert u_lit[20, 20] < -0.3
+    assert abs(u_shd[20, 20]) < 1e-6
+
+
+def test_hours_past_midnight_map_to_next_day(tmp_cache):
+    from app.weather import split_hour
+    from app.windninja import wind_path
+    assert split_hour("2026-09-24", 23) == ("2026-09-24", 23)
+    assert split_hour("2026-09-24", 26) == ("2026-09-25", 2)
+    assert split_hour("2026-12-31", 25) == ("2027-01-01", 1)
+    a = create_area(42.1589, -74.2047, "America/New_York")
+    assert wind_path(a, "2026-09-24", 26, "fallback").name == "wind_fallback_2026-09-25_02.npy"

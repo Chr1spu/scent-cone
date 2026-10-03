@@ -173,8 +173,9 @@ export async function loadLive(onProgress: Progress = () => {}, req: LiveRequest
     date = now.date;
     startHour = now.hour;
   }
-  startHour = Math.max(0, Math.min(startHour, 23 - 1));
-  const endHour = Math.min(23, startHour + HOURS_SPAN);
+  // hours count from the start date's midnight, so a window may run past 23:00
+  startHour = Math.max(0, Math.min(startHour, 23));
+  const endHour = startHour + HOURS_SPAN;
   const hours: number[] = [];
   for (let h = startHour; h <= endHour; h++) hours.push(h);
   const base: AreaConfig = isDemoPlace
@@ -211,7 +212,7 @@ export async function loadLive(onProgress: Progress = () => {}, req: LiveRequest
     fetchBin(`${apiBase()}/api/areas/${id}/landcover?level=overview`, cells(om)).then((r) => new Uint8Array(r.buf)),
     fetchBin(`${apiBase()}/api/areas/${id}/landcover?level=detail`, nd).then((r) => new Uint8Array(r.buf)),
     fetchJson<{ features: GeoFeature[] }>(`${apiBase()}/api/areas/${id}/features`),
-    fetchJson<Weather>(`${apiBase()}/api/areas/${id}/weather?date=${base.date}`),
+    fetchJson<Weather>(`${apiBase()}/api/areas/${id}/weather?date=${base.date}&days=${base.endHour > 23 ? 2 : 1}`),
   ]);
   onProgress(0.5, 'Starting wind job');
   const job = await fetchJson<{ jobId: string }>(`${apiBase()}/api/areas/${id}/wind`, {

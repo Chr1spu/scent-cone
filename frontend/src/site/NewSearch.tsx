@@ -217,7 +217,7 @@ export function NewSearch() {
                   <select className="field mt-0.5" value={start} onChange={(e) => setStart(Number(e.target.value))}>
                     {Array.from({ length: 23 }, (_, h) => (
                       <option key={h} value={h}>
-                        {String(h).padStart(2, '0')}:00 to {String(Math.min(23, h + 8)).padStart(2, '0')}:00
+                        {String(h).padStart(2, '0')}:00 to {String((h + 8) % 24).padStart(2, '0')}:00{h + 8 > 23 ? ' next day' : ''}
                       </option>
                     ))}
                   </select>

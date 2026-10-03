@@ -9,6 +9,7 @@ import { CameraRig } from './CameraRig';
 import { DogTeams } from './DogTeams';
 import { FeatureLines } from './FeatureLines';
 import { Heatmap } from './Heatmap';
+import { Landmarks } from './Landmarks';
 import { Markers } from './Markers';
 import { ProbabilityLayer } from './ProbabilityLayer';
 import { ScentParticles } from './ScentParticles';
@@ -71,6 +72,7 @@ export function SceneRoot({ bundle }: { bundle: AreaBundle }) {
       <CameraRig />
       <Terrain bundle={bundle} />
       <FeatureLines bundle={bundle} />
+      <Landmarks bundle={bundle} />
       <Vegetation bundle={bundle} />
       <WindLayer bundle={bundle} />
       <ScentParticles bundle={bundle} />

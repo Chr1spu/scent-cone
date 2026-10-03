@@ -15,7 +15,7 @@ from .encode import grid_response
 from .features import fetch_features
 from .landcover import fetch_landcover
 from .terrain import fetch_dem
-from .weather import fetch_weather, local_now, resolve_timezone
+from .weather import fetch_weather, fetch_weather_span, local_now, resolve_timezone
 
 logging.basicConfig(level=logging.INFO)
 
@@ -111,13 +111,16 @@ def get_features(area_id: str):
 
 
 @app.get("/api/areas/{area_id}/weather")
-def get_weather(area_id: str, date: str):
-    return fetch_weather(_area(area_id), date)
+def get_weather(area_id: str, date: str, days: int = Query(1, ge=1, le=2)):
+    """Hourly weather; with days=2 the hours continue past 23 into the next day."""
+    return fetch_weather_span(_area(area_id), date, days)
 
 
 @app.post("/api/areas/{area_id}/wind")
 def post_wind(area_id: str, req: WindRequest):
     a = _area(area_id)
+    if not (0 <= req.startHour <= 23 and req.startHour <= req.endHour <= req.startHour + 24):
+        raise HTTPException(400, "startHour must be 0-23 and endHour within 24 h after it")
     hours = list(range(req.startHour, req.endHour + 1, max(req.stepHours, 1)))
 
     def work(job: jobs.Job):

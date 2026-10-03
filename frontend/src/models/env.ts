@@ -65,8 +65,10 @@ function lerpAngle(a: number, b: number, w: number): number {
 
 export function weatherAt(weather: Weather, t: number): Omit<Env, 't' | 'sun'> {
   const hs = weather.hours;
-  const h0 = Math.max(0, Math.min(23, Math.floor(t)));
-  const h1 = Math.min(23, h0 + 1);
+  // hours may continue past 23 (windows that cross midnight)
+  const last = hs.length ? hs[hs.length - 1].hour : 23;
+  const h0 = Math.max(0, Math.min(last, Math.floor(t)));
+  const h1 = Math.min(last, h0 + 1);
   const a = hs.find((h) => h.hour === h0) ?? hs[0];
   const b = hs.find((h) => h.hour === h1) ?? a;
   const w = Math.min(Math.max(t - h0, 0), 1);

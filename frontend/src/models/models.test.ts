@@ -319,3 +319,26 @@ describe('terrain shadows', () => {
     expect(sunlitMask(ti, lowEast)[50 * 100 + 90]).toBe(1);
   });
 });
+
+describe('parallel ensemble slices', () => {
+  it('summing member slices reproduces the full run exactly', () => {
+    const ti = flatTerrain(60, 10);
+    const field = uniformField(60, 0.6, 0.2);
+    const prob = new Float32Array(60 * 60).fill(1 / 3600);
+    const blocks = blockIndex(60, 60, 5, 10);
+    const base = { ti, field, place, weather, prob, tEnd: 20, members: 3, particles: 400, dt: 15, seed: 9, blocks };
+    const full = runEnsemble(base);
+    const parts = [0, 1, 2].map((i) => runEnsemble({ ...base, memberRange: [i, i + 1] as [number, number] }));
+    for (let k = 0; k < full.heat.length; k += 37) {
+      const sum = parts.reduce((a, p) => a + p.heat[k], 0);
+      expect(sum).toBeCloseTo(full.heat[k], 6);
+    }
+    let cs = 0;
+    let cf = 0;
+    for (let k = 0; k < full.contrib!.length; k++) {
+      cf += full.contrib![k];
+      cs += parts[0].contrib![k] + parts[1].contrib![k] + parts[2].contrib![k];
+    }
+    expect(cs).toBeCloseTo(cf, 5);
+  });
+});

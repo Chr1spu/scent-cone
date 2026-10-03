@@ -10,6 +10,7 @@ import type { SearchedSector as SectorShape } from '../models/searchUpdate';
 import { toLocal, toWorld } from '../geo/grid';
 import { groundY } from '../geo/heights';
 import { sunAt, weatherAt } from '../models/env';
+import { buildTerrainInfo, shadowMask, type TerrainInfo } from '../models/terrainInfo';
 import { computeFallbackWind, smoothedGradients, type TerrainGradients, type WindField } from '../models/wind';
 import { ComputeClient } from '../workers/client';
 import type { AlertResult, DeploymentOut, HeatResult, ProbResult, SearchResult } from '../workers/protocol';
@@ -17,6 +18,7 @@ import { useStore, type State } from './store';
 
 let client: ComputeClient | null = null;
 let grads: TerrainGradients | null = null;
+let terrain: TerrainInfo | null = null;
 const get = () => useStore.getState();
 const set = (p: Partial<State>) => useStore.getState().set(p);
 
@@ -98,6 +100,7 @@ export async function loadMode(mode: 'offline' | 'live', req?: LiveRequest) {
 async function applyBundle(b: AreaBundle) {
   const c = b.config;
   grads = smoothedGradients(b.detail.elev, b.detail.meta.cols, b.detail.meta.rows, b.detail.meta.cellSize);
+  terrain = buildTerrainInfo(b.detail.meta, b.frame, b.detail.elev, b.detail.landcover, b.overview);
   const windSource = b.windninja ? 'windninja' : 'fallback';
   const activeWind = b.windninja ?? b.fallback;
   const lkp = toLocal(b.frame, c.lkp.x, c.lkp.y);
@@ -230,7 +233,8 @@ async function applyWind(src: 'windninja' | 'fallback', onsite: State['onsiteWin
     // on-site observation overrides the forecast input to the fallback model for that hour
     const c = b.config;
     const sun = sunAt({ date: c.date, lat: c.lat, lon: c.lon, utcOffsetSeconds: c.utcOffsetSeconds }, onsite.hour);
-    const hourGrid = computeFallbackWind(grads, onsite.speed, onsite.dir, sun.elevation, sun.azimuth);
+    const shaded = terrain && sun.elevation > 0 ? shadowMask(terrain, sun.dir) : undefined;
+    const hourGrid = computeFallbackWind(grads, onsite.speed, onsite.dir, sun.elevation, sun.azimuth, shaded);
     const idx = field.hours.indexOf(onsite.hour);
     if (idx >= 0) {
       field = { hours: field.hours, grids: field.grids.map((g, i) => (i === idx ? hourGrid : g)) };
@@ -464,8 +468,13 @@ export function utmToLatLon(x: number, y: number, epsg: number): { lat: number; 
   return { lat: (lat * 180) / Math.PI, lon: (zone - 1) * 6 - 180 + 3 + (lon * 180) / Math.PI };
 }
 
+/** Local clock time; hours past 23 belong to the next day. */
 export function fmtTime(t: number): string {
-  const h = Math.floor(t + 1e-6);
-  const m = Math.round((t - h) * 60);
-  return `${String(h).padStart(2, '0')}:${String(m === 60 ? 0 : m).padStart(2, '0')}`;
+  let h = Math.floor(t + 1e-6);
+  let m = Math.round((t - h) * 60);
+  if (m === 60) {
+    m = 0;
+    h += 1;
+  }
+  return `${String(h % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }

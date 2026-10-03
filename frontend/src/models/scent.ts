@@ -273,6 +273,11 @@ export interface EnsembleInput {
   blocks?: BlockIndex;
   /** neutral scent conditions (reference run for absolute detectability thresholds) */
   neutral?: boolean;
+  /**
+   * Run only members [from, to) of the `members` ensemble (for parallel workers). Weights and
+   * random draws are those of the full run, so summing the slices reproduces it exactly.
+   */
+  memberRange?: [number, number];
   onProgress?: (f: number) => void;
 }
 
@@ -302,8 +307,10 @@ export function runEnsemble(inp: EnsembleInput): EnsembleResult {
   const envEvery = Math.max(1, Math.round(300 / dt)); // refresh env every 5 min
   const halfLife = SCENT.accumHalfLifeS;
   const memberRng = new Rng(seed ^ 0x9e3779b9);
+  const [from, to] = inp.memberRange ?? [0, members];
   for (let mi = 0; mi < members; mi++) {
     const member = members === 1 ? IDENTITY_MEMBER : makeMember(memberRng);
+    if (mi < from || mi >= to) continue;
     const sim = createSim({ ti: inp.ti, prob: inp.prob, n, seed: seed + 101 * mi, sources, staggerS: Math.min(SCENT.lifetimeS, windowS) });
     let se: StepEnv | null = null;
     for (let k = 0; k < steps; k++) {
@@ -321,7 +328,7 @@ export function runEnsemble(inp: EnsembleInput): EnsembleResult {
       };
       step(sim, inp.field, se, dt, acc);
     }
-    inp.onProgress?.((mi + 1) / members);
+    inp.onProgress?.((mi + 1 - from) / (to - from));
   }
   return { heat, contrib };
 }

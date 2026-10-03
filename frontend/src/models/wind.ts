@@ -137,6 +137,8 @@ export function computeFallbackWind(
   forecastDir: number,
   sunElevDeg: number,
   sunAzDeg: number,
+  /** optional ridge-shadow mask (1 = shaded): no daytime upslope flow there */
+  shaded?: Uint8Array,
 ): WindHour {
   const p = SLOPE_WIND;
   const { gx, gy } = grads;
@@ -159,7 +161,7 @@ export function computeFallbackWind(
     const upx = ax * inv;
     const upy = ay * inv;
     const ndot = (-ax * sx - ay * sy + sz) / Math.sqrt(ax * ax + ay * ay + 1);
-    const sunfacing = smoothstep(p.sunFacingDot - 0.1, p.sunFacingDot + 0.1, ndot);
+    const sunfacing = shaded && shaded[i] ? 0 : smoothstep(p.sunFacingDot - 0.1, p.sunFacingDot + 0.1, ndot);
     const dx = (1 - day) * -upx + day * sunfacing * upx;
     const dy = (1 - day) * -upy + day * sunfacing * upy;
     const mag = Math.min(p.k * slope, p.cap) * weight;

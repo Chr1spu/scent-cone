@@ -94,6 +94,7 @@ function Legend() {
         <Key color={FEATURE_COLORS.road} label="Road" line />
         <Key color={FEATURE_COLORS.stream} label="Stream, water" line />
         <Key color={FEATURE_COLORS.cliff} label="Cliff" line />
+        <Key color="#9a968e" label="Trailhead (cairn)" />
         <Key color={COLORS.amber} label="Focus square" line />
         <Key color={COLORS.searched} label="Searched area" line />
         <Key color={COLORS.recheck} label="Recheck" line />

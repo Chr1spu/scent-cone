@@ -9,7 +9,7 @@ import math
 
 import numpy as np
 
-from .config import SLOPE_WIND
+from .config import SHADOW, SLOPE_WIND
 
 
 def sun_position(lat: float, lon: float, when_utc: dt.datetime) -> tuple[float, float]:
@@ -67,8 +67,55 @@ def met_to_uv(speed, direction_deg):
     return -speed * np.sin(r), -speed * np.cos(r)
 
 
+def shadow_mask(elev: np.ndarray, meta: dict, sun_elev: float, sun_az: float,
+                horizon: tuple[np.ndarray, dict] | None = None) -> np.ndarray:
+    """True where a ridge blocks the sun: march from each cell toward the sun over the
+    detail DEM, then the coarser surrounding DEM. Computed every `stride` cells."""
+    rows, cols = elev.shape
+    if sun_elev <= 0:
+        return np.ones((rows, cols), dtype=bool)
+    st = SHADOW["stride"]
+    cs = meta["cellSize"]
+    r_idx = np.arange(0, rows, st)
+    c_idx = np.arange(0, cols, st)
+    R, C = np.meshgrid(r_idx, c_idx, indexing="ij")
+    X = meta["originX"] + (C + 0.5) * cs
+    Y = meta["originY"] - (R + 0.5) * cs
+    z0 = elev[R, C] + SHADOW["eye_m"]
+    a, e = math.radians(sun_az), math.radians(sun_elev)
+    dx, dy, rise = math.sin(a), math.cos(a), math.tan(e)
+    zmax = float(elev.max())
+    if horizon is not None:
+        zmax = max(zmax, float(horizon[0].max()))
+    shaded = np.zeros(R.shape, dtype=bool)
+    d = SHADOW["step_m"]
+    while d <= SHADOW["max_m"]:
+        ray = z0 + d * rise
+        active = ~shaded & (ray <= zmax)
+        if not active.any():
+            break
+        px, py = X + dx * d, Y + dy * d
+        cc = np.round((px - meta["originX"]) / cs - 0.5).astype(int)
+        rr = np.round((meta["originY"] - py) / cs - 0.5).astype(int)
+        inside = (cc >= 0) & (rr >= 0) & (cc < cols) & (rr < rows)
+        z = np.full(R.shape, -np.inf)
+        z[inside] = elev[rr[inside], cc[inside]]
+        if horizon is not None:
+            he, hm = horizon
+            hcs = hm["cellSize"]
+            hc = np.round((px - hm["originX"]) / hcs - 0.5).astype(int)
+            hr = np.round((hm["originY"] - py) / hcs - 0.5).astype(int)
+            hin = ~inside & (hc >= 0) & (hr >= 0) & (hc < hm["cols"]) & (hr < hm["rows"])
+            z[hin] = he[hr[hin], hc[hin]]
+        shaded |= active & (z > ray)
+        d += SHADOW["step_m"]
+    full = np.repeat(np.repeat(shaded, st, axis=0), st, axis=1)
+    return full[:rows, :cols]
+
+
 def fallback_wind(elev: np.ndarray, cell: float, forecast_speed: float, forecast_dir: float,
-                  sun_elev: float, sun_az: float, grads=None) -> tuple[np.ndarray, np.ndarray]:
+                  sun_elev: float, sun_az: float, grads=None, shaded: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """`shaded`: optional ridge-shadow mask; shaded slopes get no daytime upslope flow."""
     p = SLOPE_WIND
     gx, gy = grads if grads is not None else terrain_gradients(elev, cell)
     slope = np.sqrt(gx * gx + gy * gy)
@@ -80,6 +127,8 @@ def fallback_wind(elev: np.ndarray, cell: float, forecast_speed: float, forecast
     ndot = (-gx * sx - gy * sy + sz) / np.sqrt(gx * gx + gy * gy + 1)
     day = float(smoothstep(p["nightSunElev"], p["daySunElev"], sun_elev))
     sunfacing = smoothstep(p["sunFacingDot"] - 0.1, p["sunFacingDot"] + 0.1, ndot)
+    if shaded is not None:
+        sunfacing = np.where(shaded, 0.0, sunfacing)
     # night: downslope everywhere; day: upslope on sun-facing slopes, weak/neutral elsewhere
     dirx = (1 - day) * (-upx) + day * sunfacing * upx
     diry = (1 - day) * (-upy) + day * sunfacing * upy

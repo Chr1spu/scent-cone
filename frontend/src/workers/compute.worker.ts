@@ -19,7 +19,8 @@ import {
   sumInside,
   type StaticLayers,
 } from '../models/probability';
-import { blockIndex, runEnsemble, type BlockIndex } from '../models/scent';
+import { blockIndex, type BlockIndex } from '../models/scent';
+import { EnsemblePool, parallelEnsemble, poolSize } from './pool';
 import { searchUpdate, type SearchedSector } from '../models/searchUpdate';
 import { buildTerrainInfo, LC, type TerrainInfo } from '../models/terrainInfo';
 import { alertLikelihood, argmax, backtrace, driftPoint } from '../models/triangulation';
@@ -68,6 +69,7 @@ interface Ensemble {
 }
 
 let S: State | null = null;
+let pool: EnsemblePool | null = null;
 
 function st(): State {
   if (!S) throw new Error('worker not initialised');
@@ -109,7 +111,17 @@ function init(m: InitMsg) {
     profile: 'child712',
     lkp: [0, 0],
   };
-  return { ok: true };
+  // helper workers run ensemble members in parallel (inline fallback if unavailable)
+  pool?.terminate();
+  pool = null;
+  try {
+    if (typeof Worker !== 'undefined') {
+      pool = new EnsemblePool(poolSize(), { type: 'init', frame: m.frame, detail: m.detail, overview: m.overview, weather: m.weather, place: m.place, wind: m.wind });
+    }
+  } catch {
+    pool = null;
+  }
+  return { ok: true, helpers: pool?.size ?? 0 };
 }
 
 function recomputePrior() {
@@ -153,19 +165,27 @@ function recomputePosterior(): ProbResult {
  * Ensemble for the window ending at t, plus a neutral-conditions reference run with the same
  * wind that fixes the absolute detectability thresholds.
  */
-function ensembleAt(t: number, report: (f: number, l: string) => void, windowMin: number = ENSEMBLE.windowMin): Ensemble {
+async function ensembleAt(t: number, report: (f: number, l: string) => void, windowMin: number = ENSEMBLE.windowMin): Promise<Ensemble> {
   const s = st();
   const key = `${s.probVersion}:${s.windVersion}`;
   if (s.last && s.last.key === key && Math.abs(s.last.t - t) < 1e-6 && s.last.windowMin === windowMin) return s.last;
   const base = { ti: s.ti, field: s.wind, place: s.init.place, weather: s.init.weather, prob: s.detailPost!, tEnd: t, windowMin };
-  const { heat, contrib } = runEnsemble({
-    ...base,
-    blocks: s.blocks,
-    seed: 1000 + Math.round(t * 60),
-    onProgress: (f) => report(0.05 + 0.8 * f, `Scent ensemble ${Math.round(f * ENSEMBLE.members)}/${ENSEMBLE.members}`),
-  });
-  report(0.88, 'Reference run (neutral scent conditions)');
-  const ref = runEnsemble({ ...base, members: ENSEMBLE.referenceMembers, particles: ENSEMBLE.referenceParticles, neutral: true, seed: 7 + Math.round(t * 60) });
+  const total = ENSEMBLE.members + ENSEMBLE.referenceMembers;
+  let doneMain = 0;
+  let doneRef = 0;
+  const tick = () => report(0.05 + 0.9 * ((doneMain * ENSEMBLE.members + doneRef * ENSEMBLE.referenceMembers) / total), 'Scent ensemble');
+  // the ensemble and its neutral reference run together across the helper pool
+  const [main, ref] = await Promise.all([
+    parallelEnsemble(pool, { ...base, members: ENSEMBLE.members, blocks: s.blocks, seed: 1000 + Math.round(t * 60) }, (f) => {
+      doneMain = f;
+      tick();
+    }),
+    parallelEnsemble(pool, { ...base, members: ENSEMBLE.referenceMembers, particles: ENSEMBLE.referenceParticles, neutral: true, seed: 7 + Math.round(t * 60) }, (f) => {
+      doneRef = f;
+      tick();
+    }),
+  ]);
+  const { heat, contrib } = main;
   const cols = s.ti.meta.cols;
   const rows = s.ti.meta.rows;
   s.last = {
@@ -207,41 +227,46 @@ function topHotspots(heat: Float32Array, map: GridMap, minHeat: number, k = 8, m
   return out;
 }
 
-function heatAt(t: number, report: (f: number, l: string) => void): HeatResult {
+async function heatAt(t: number, report: (f: number, l: string) => void): Promise<HeatResult> {
   const s = st();
-  const e = ensembleAt(t, report);
+  const e = await ensembleAt(t, report);
   return { t, heat: e.heat.slice(), lo: e.th.lo, hi: e.th.hi, refHi: e.th.hi, relStrength: e.relStrength, hotspots: topHotspots(e.heat, s.ti.map, e.th.lo) };
 }
 
-function hourlySnapshots(report: (f: number, l: string) => void): Map<number, Float32Array> {
+async function hourlySnapshots(report: (f: number, l: string) => void): Promise<Map<number, Float32Array>> {
   const s = st();
   const key = `${s.probVersion}:${s.windVersion}`;
   if (s.snapshots && s.snapshots.key === key) return s.snapshots.byHour;
   const byHour = new Map<number, Float32Array>();
   const hours = s.wind.hours.slice(1);
-  hours.forEach((h, k) => {
-    const { heat } = runEnsemble({
-      ti: s.ti,
-      field: s.wind,
-      place: s.init.place,
-      weather: s.init.weather,
-      prob: s.detailPost!,
-      tEnd: h,
-      members: 1,
-      particles: ENSEMBLE.hourlyParticles,
-      dt: 15,
-      seed: 50 + h,
-    });
-    byHour.set(h, blockMean(heat, s.ti.meta.cols, s.ti.meta.rows, s.blocks));
-    report(0.6 + (0.35 * (k + 1)) / hours.length, `Scoring time windows ${h - 1}:00–${h}:00`);
-  });
+  let n = 0;
+  // one cheap single-member run per hour, all in parallel
+  await Promise.all(
+    hours.map((h) =>
+      parallelEnsemble(pool, {
+        ti: s.ti,
+        field: s.wind,
+        place: s.init.place,
+        weather: s.init.weather,
+        prob: s.detailPost!,
+        tEnd: h,
+        members: 1,
+        particles: ENSEMBLE.hourlyParticles,
+        dt: 15,
+        seed: 50 + h,
+      }).then(({ heat }) => {
+        byHour.set(h, blockMean(heat, s.ti.meta.cols, s.ti.meta.rows, s.blocks));
+        report(0.6 + (0.35 * ++n) / hours.length, 'Scoring time windows');
+      }),
+    ),
+  );
   s.snapshots = { key, byHour };
   return byHour;
 }
 
-function deploy(t: number, teams: number, report: (f: number, l: string) => void): DeploymentOut[] {
+async function deploy(t: number, teams: number, report: (f: number, l: string) => void): Promise<DeploymentOut[]> {
   const s = st();
-  const e = ensembleAt(t, (f, l) => report(f * 0.55, l));
+  const e = await ensembleAt(t, (f, l) => report(f * 0.55, l));
   report(0.56, 'Greedy deployment');
   const detRecv = detectability(e.heatRecv, e.thRecv);
   const deps = greedyDeploy({
@@ -254,9 +279,10 @@ function deploy(t: number, teams: number, report: (f: number, l: string) => void
     map: s.ti.map,
     teams,
   });
-  const snaps = hourlySnapshots(report);
+  const snaps = await hourlySnapshots(report);
   return deps.map((d) => {
-    const windowScores = [...snaps.entries()].map(([hour, hr]) => ({ hour, score: snapshotScore(hr, d.recv, e.thRecv) }));
+    // hours in order (results arrive in completion order); ties go to the earliest hour
+    const windowScores = [...snaps.entries()].sort((p, q) => p[0] - q[0]).map(([hour, hr]) => ({ hour, score: snapshotScore(hr, d.recv, e.thRecv) }));
     const best = windowScores.reduce((a, b) => (b.score > a.score ? b : a), windowScores[0]);
     let su = 0;
     let sv = 0;
@@ -298,10 +324,10 @@ function alert(x: number, y: number, t: number, report: (f: number, l: string) =
   return { zone, prob: recomputePosterior() };
 }
 
-function searched(sector: SearchedSector, t0: number, t1: number, report: (f: number, l: string) => void): SearchResult {
+async function searched(sector: SearchedSector, t0: number, t1: number, report: (f: number, l: string) => void): Promise<SearchResult> {
   const s = st();
   const windowMin = Math.max(15, Math.round((t1 - t0) * 60));
-  const e = ensembleAt(t1, (f, l) => report(f * 0.9, l), windowMin);
+  const e = await ensembleAt(t1, (f, l) => report(f * 0.9, l), windowMin);
   const r = searchUpdate({ sector, contrib: e.contrib, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map });
   for (let i = 0; i < s.L.length; i++) s.L[i] *= r.factor[i];
   return { meanDet: r.meanDet, recheck: r.recheck, prob: recomputePosterior() };
@@ -356,8 +382,13 @@ function suggestAlerts(truth: [number, number], times: number[]): [number, numbe
   return best.map((k) => cands[k].p).sort((p, q) => p[2] - q[2]);
 }
 
+// requests are handled strictly one at a time (some await the helper pool)
+let queue: Promise<void> = Promise.resolve();
 ctx.onmessage = (ev: MessageEvent<Envelope>) => {
-  const { id, req } = ev.data;
+  queue = queue.then(() => handle(ev.data));
+};
+
+async function handle({ id, req }: Envelope): Promise<void> {
   const report = (frac: number, label: string) => ctx.postMessage({ id, kind: 'progress', frac, label } satisfies Reply);
   try {
     let result: unknown;
@@ -369,6 +400,7 @@ ctx.onmessage = (ev: MessageEvent<Envelope>) => {
         const s = st();
         s.wind = req.wind;
         s.windVersion++;
+        pool?.setWind(req.wind);
         s.last = null;
         s.snapshots = null;
         result = { ok: true };
@@ -390,16 +422,16 @@ ctx.onmessage = (ev: MessageEvent<Envelope>) => {
         break;
       }
       case 'heat':
-        result = heatAt(req.t, report);
+        result = await heatAt(req.t, report);
         break;
       case 'deploy':
-        result = deploy(req.t, req.teams, report);
+        result = await deploy(req.t, req.teams, report);
         break;
       case 'alert':
         result = alert(req.x, req.y, req.t, report);
         break;
       case 'searched':
-        result = searched(req.sector, req.t0, req.t1, report);
+        result = await searched(req.sector, req.t0, req.t1, report);
         break;
       case 'resetSearch': {
         const s = st();
@@ -418,4 +450,4 @@ ctx.onmessage = (ev: MessageEvent<Envelope>) => {
   } catch (e) {
     ctx.postMessage({ id, kind: 'error', error: e instanceof Error ? e.message : String(e) } satisfies Reply);
   }
-};
+}

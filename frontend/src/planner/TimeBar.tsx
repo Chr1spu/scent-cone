@@ -65,8 +65,8 @@ export function TimeBar() {
         <input type="range" min={t0} max={t1} step={TIME.stepMin / 60} value={time} aria-label="Time of day" onChange={(e) => setTime(Number(e.target.value))} className="w-full" />
         <div className="pointer-events-none relative h-3.5 text-[10px] text-ink-3">
           {ticks.map((h) => (
-            <span key={h} className="num absolute -translate-x-1/2" style={{ left: `${((h - t0) / (t1 - t0)) * 100}%` }}>
-              {h}
+            <span key={h} className={`num absolute -translate-x-1/2 ${h % 24 === 0 && h > 0 ? 'font-semibold text-ink' : ''}`} style={{ left: `${((h - t0) / (t1 - t0)) * 100}%` }} title={h >= 24 ? 'next day' : undefined}>
+              {h % 24}
             </span>
           ))}
           {missing > t0 && missing < t1 && (

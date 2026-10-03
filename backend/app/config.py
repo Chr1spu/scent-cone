@@ -25,6 +25,9 @@ SLOPE_WIND = {
     "smoothRadius": 2,
 }
 
+# Ridge shadows (mirrors frontend/src/models/terrainInfo.ts shadowMask)
+SHADOW = {"stride": 2, "step_m": 30.0, "max_m": 5000.0, "eye_m": 0.6}
+
 # WindNinja
 WINDNINJA_MESH_M = 60.0
 WINDNINJA_MARGIN_M = 1500.0   # extra terrain around the detail segment for the WN domain
