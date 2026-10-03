@@ -57,8 +57,15 @@ export interface BootOptions {
 
 /** Planner entry point, from the URL: the demo, or a live area chosen on "Plan a search". */
 export async function boot(opts: BootOptions = {}) {
-  set({ status: 'loading', loadFrac: 0.01, loadLabel: 'Checking the server', error: null, errorKind: null });
-  const health = await backendHealthy(3000);
+  set({
+    status: 'loading',
+    loadFrac: 0.01,
+    loadLabel: opts.live ? 'Contacting the server (a sleeping server can take up to a minute to wake)' : 'Checking the server',
+    error: null,
+    errorKind: null,
+  });
+  // the demo needs no server, so don't wait long; a live area may have to wake a sleeping host
+  const health = await backendHealthy(opts.live ? 75000 : 3000);
   set({ backend: health });
   if (!opts.live) {
     await loadMode('offline');

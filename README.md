@@ -1,6 +1,6 @@
 # Scent Cone
 
-The repository is private, so the GitHub Pages site is off. To publish the site, see [Deploying](#deploying).
+The repository is private. To put the website and server online for free (Vercel + Hugging Face Spaces), follow [docs/HOSTING.md](docs/HOSTING.md).
 
 **Where and when to deploy air-scent dogs.** Scent Cone shows a search area as interactive 3D terrain, computes terrain-adjusted wind with the US Forest Service's **WindNinja**, simulates how human scent drifts from where a missing person might be, and recommends dog-team deployment points. When dogs alert, or search a sector and find nothing, it updates where the person probably is.
 
@@ -120,6 +120,9 @@ backend/    FastAPI + WindNinja CLI (Docker), terrain/landcover/OSM/weather pipe
 ```
 
 ## Deploying
+
+Step-by-step free hosting: [docs/HOSTING.md](docs/HOSTING.md) (website on Vercel, server on Hugging Face Spaces, deployed by `.github/workflows/deploy-backend.yml`).
+
 
 * **Frontend (static):** the repository is private, and GitHub Pages needs a public repository on the free plan (or GitHub Pro). `.github/workflows/pages.yml` still works if Pages is available: set the repository variable `PAGES_ENABLED=true`. Netlify, Vercel and Cloudflare Pages all deploy from private repositories for free; `netlify.toml` and `frontend/vercel.json` are ready. Set `VITE_API_BASE` to a hosted backend URL to enable live mode.
 * **CI:** every push runs the frontend checks, the backend tests, and a Docker build of the server with the tests run inside it (including a real WindNinja run).

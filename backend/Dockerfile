@@ -32,6 +32,7 @@ COPY app ./app
 COPY scripts ./scripts
 COPY tests ./tests
 COPY pytest.ini .
-RUN mkdir -p cache data
+# writable by any user: Hugging Face Spaces runs containers as uid 1000, not root
+RUN mkdir -p cache data && chmod -R 777 cache data
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

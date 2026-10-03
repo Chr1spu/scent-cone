@@ -1,0 +1,48 @@
+# Deploys the server (backend/, Docker + WindNinja) to a Hugging Face Space.
+# One-time setup (see docs/HOSTING.md):
+#   repository secret   HF_TOKEN  = a Hugging Face access token with write permission
+#   repository variable HF_SPACE  = <hf-username>/scent-cone-api
+# The Space is created on first run. Hugging Face builds the image (WindNinja compile:
+# ~10 minutes the first time) and serves it at https://<hf-username>-scent-cone-api.hf.space
+name: Deploy server to Hugging Face
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**', '.github/workflows/deploy-backend.yml']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ vars.HF_SPACE != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install "huggingface_hub>=0.24"
+      - name: Upload backend to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          python - <<'EOF'
+          import os, shutil, tempfile
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space = os.environ["HF_SPACE"]
+          api.create_repo(space, repo_type="space", space_sdk="docker", exist_ok=True)
+          # the Space README carries its config: Docker SDK, the port uvicorn listens on
+          stage = tempfile.mkdtemp()
+          shutil.copytree("backend", stage, dirs_exist_ok=True,
+                          ignore=shutil.ignore_patterns(".venv", "cache", "__pycache__", ".pytest_cache", "*.tif"))
+          with open(os.path.join(stage, "README.md"), "w") as f:
+              f.write("---\ntitle: Scent Cone API\nemoji: 🐕\ncolorFrom: yellow\ncolorTo: green\n"
+                      "sdk: docker\napp_port: 8000\npinned: false\n---\n\n"
+                      "Server for Scent Cone: terrain, land cover, weather and WindNinja wind. "
+                      "Health check: `/api/health`.\n")
+          api.upload_folder(folder_path=stage, repo_id=space, repo_type="space",
+                            commit_message="Deploy from GitHub", delete_patterns=["*"])
+          print(f"Deployed to https://huggingface.co/spaces/{space}")
+          EOF

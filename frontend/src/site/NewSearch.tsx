@@ -35,7 +35,7 @@ function ServerBox({ state, windninja, onCheck }: { state: ServerState; windninj
       <div className="flex items-center gap-2">
         <span className={`inline-block h-2.5 w-2.5 rounded-full ${state === 'ok' ? 'bg-forest' : state === 'down' ? 'bg-sar' : 'bg-ink-3'}`} />
         <span className="font-medium">
-          {state === 'checking' ? 'Checking the server…' : state === 'ok' ? `Server connected${windninja ? ', WindNinja ready' : ', WindNinja missing (fallback wind only)'}` : 'No server reachable'}
+          {state === 'checking' ? 'Contacting the server… (up to a minute if it was asleep)' : state === 'ok' ? `Server connected${windninja ? ', WindNinja ready' : ', WindNinja missing (fallback wind only)'}` : 'No server reachable'}
         </span>
       </div>
       <p className="mt-1 text-xs text-ink-3">Address: {apiBase() || 'this website'}</p>
@@ -80,7 +80,8 @@ export function NewSearch() {
 
   const check = () => {
     setServerState('checking');
-    backendHealthy(3000).then((h) => {
+    // a free host that went to sleep can take up to a minute to answer
+    backendHealthy(75000).then((h) => {
       setServerState(h.ok ? 'ok' : 'down');
       setWn(h.windninja);
     });
