@@ -15,6 +15,19 @@ export type ModelName =
 
 const cache = new Map<string, Promise<THREE.Group | null>>();
 
+/** Real-world height (m) each model is normalised to, whatever units the file uses. */
+const TARGET_HEIGHT_M: Record<ModelName, number> = {
+  'dog.glb': 0.7,
+  'handler.glb': 1.8,
+  'tree_conifer.glb': 18, // matches the ×1.5-exaggerated primitive trees
+  'tree_broadleaf.glb': 16,
+  'shrub.glb': 2.2,
+  'tent.glb': 1.6,
+  'lkp_marker.glb': 2.5,
+  'child_marker.glb': 1.4,
+  'landmark.glb': 6,
+};
+
 /**
  * Loads /models/<name>. Resolves null (never throws) if the file is missing or not a GLB —
  * callers render placeholder primitives instead. Dev servers answer missing files with
@@ -32,12 +45,15 @@ export function loadModel(name: ModelName): Promise<THREE.Group | null> {
         if (magic !== 'glTF') return null;
         const gltf = await new GLTFLoader().parseAsync(buf, `${import.meta.env.BASE_URL}models/`);
         const scene = gltf.scene;
-        // normalise: base at y = 0
+        // normalise: real-world height, base at y = 0
         const box = new THREE.Box3().setFromObject(scene);
-        scene.position.y -= box.min.y;
+        const h = Math.max(box.max.y - box.min.y, 1e-6);
+        const k = TARGET_HEIGHT_M[name] / h;
+        scene.scale.multiplyScalar(k);
+        scene.position.y = -box.min.y * k;
         const g = new THREE.Group();
         g.add(scene);
-        g.userData.height = box.max.y - box.min.y;
+        g.userData.height = TARGET_HEIGHT_M[name];
         g.traverse((o) => {
           if ((o as THREE.Mesh).isMesh) o.castShadow = false;
         });

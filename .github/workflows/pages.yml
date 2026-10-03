@@ -1,5 +1,6 @@
 # Publishes the static frontend (offline demo works with no backend) to GitHub Pages.
-# Enable once: Settings → Pages → Source: "GitHub Actions". Optional repo variable
+# Enable once: Settings → Pages → Source: "GitHub Actions", then set the repo variable
+# PAGES_ENABLED=true (or run it manually). Optional repo variable
 # VITE_API_BASE points the deployed frontend at a hosted backend for live mode.
 name: Deploy frontend to GitHub Pages
 on:
@@ -18,6 +19,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ vars.PAGES_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     defaults:
       run:
