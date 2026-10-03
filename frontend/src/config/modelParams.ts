@@ -1,0 +1,126 @@
+/**
+ * Every tunable model number lives here. These are heuristics for a demo, not
+ * validated scent physics; the UI labels them as such.
+ */
+
+export type ProfileId = 'child16' | 'child712' | 'hiker' | 'dementia';
+
+export interface ProfileParams {
+  label: string;
+  /** median crow's-flight distance from LKP (m) */
+  medianM: number;
+  /** log-normal spread (sigma of ln d) */
+  spread: number;
+  /** linear-feature attraction amplitude and length scale (m) */
+  featureA: number;
+  featureL: number;
+  note: string;
+}
+
+export const PROFILES: Record<ProfileId, ProfileParams> = {
+  child16: { label: 'Child (1–6)', medianM: 300, spread: 0.9, featureA: 1, featureL: 150, note: 'Lost Person Behavior, mountains' },
+  child712: { label: 'Child (7–12)', medianM: 1000, spread: 0.9, featureA: 1, featureL: 150, note: 'placeholder, tune' },
+  hiker: { label: 'Hiker', medianM: 3100, spread: 0.8, featureA: 3, featureL: 150, note: 'temperate mountains' },
+  dementia: { label: 'Person with dementia', medianM: 1100, spread: 0.9, featureA: 1, featureL: 150, note: 'urban median; wilderness placeholder' },
+};
+
+export const PROBABILITY = {
+  /** cells whose least-cost detour ratio exceeds these are "across a barrier" */
+  barrierRatioLo: 1.25,
+  barrierRatioHi: 1.6,
+  barrierFactor: 0.2,
+  /** cost multiplier for crossing water / cliff / river cells in the detour pass */
+  barrierCost: 25,
+  slopeScaleDeg: 25,
+  brushRadiusM: 250,
+  brushUp: 2,
+  brushDown: 0.5,
+  /** detail cells below this probability do not emit scent */
+  minSourceProb: 1e-6,
+};
+
+/** Fallback slope-wind model; mirrors backend/app/config.py SLOPE_WIND. */
+export const SLOPE_WIND = {
+  k: 3.0,
+  cap: 2.5,
+  forecastTo2m: 0.7,
+  nightSunElev: 5.0,
+  daySunElev: 10.0,
+  sunFacingDot: 0.2,
+  calmForecast: 3.0,
+  minSlopeWeight: 0.35,
+  smoothPasses: 2,
+  smoothRadius: 2,
+};
+
+export const ENSEMBLE = {
+  members: 6,
+  rotDeg: 20,
+  scaleMin: 0.7,
+  scaleMax: 1.3,
+  particlesPerMember: 6000,
+  windowMin: 60,
+  /** simulated step for off-screen ensembles (s); visible sim uses SCENT.dt */
+  dt: 10,
+  /** cheap per-hour snapshots for best time windows */
+  hourlyParticles: 3000,
+};
+
+export const SCENT = {
+  visibleParticles: 15000,
+  dt: 2,
+  stepsPerFrame: 3,
+  turbK0: 0.5,
+  turbKPerWind: 0.3,
+  forestSlow: 0.5,
+  calmWind: 0.3,
+  calmDamp: 0.3,
+  /** a cell is a local low if lower than at least this many of 8 neighbours */
+  localLowNeighbours: 6,
+  baseTauS: 1800,
+  sunFactor: 0.7,
+  sunHighElev: 20,
+  liftWind: 2,
+  liftPerS: 0.002,
+  minStrength: 0.01,
+  accumHalfLifeS: 600,
+  /** dog nose height used when drawing particles (m above ground) */
+  drawHeightM: 2,
+};
+
+export const HOTSPOTS = {
+  detLoPct: 0.7,
+  detHiPct: 0.95,
+  /** receiver (dog position) blocks and source blocks for contribution tracking */
+  recvBlockCells: 5, // 50 m on the 10 m detail grid
+  srcBlockCells: 10, // 100 m
+  /** a source "contributes" at a receiver if it supplies at least this share of its scent */
+  contribShare: 0.02,
+  maxSourcesPerRecv: 50,
+  dogPOD: 0.7,
+  suppressRadiusM: 300,
+  maxSlopeDeg: 35,
+  cliffBufferM: 20,
+};
+
+export const TRIANGULATION = {
+  particles: 3000,
+  backMinutes: 60,
+  dt: 5,
+  eps: 0.02,
+  blurPasses: 2,
+};
+
+export const SEARCH = {
+  defaultRadiusM: 150,
+  windowMin: 60,
+  recheckDet: 0.3,
+};
+
+export const TIME = {
+  start: 14,
+  end: 22,
+  stepMin: 15,
+  /** playback: simulated hours per real second */
+  playRate: 0.25,
+};

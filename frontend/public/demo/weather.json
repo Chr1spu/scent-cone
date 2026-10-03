@@ -1,0 +1,200 @@
+{
+ "utcOffsetSeconds": -14400,
+ "hours": [
+  {
+   "hour": 0,
+   "temperature": 5.4,
+   "humidity": 80,
+   "cloudCover": 3,
+   "windSpeed": 1.44,
+   "windDirection": 138
+  },
+  {
+   "hour": 1,
+   "temperature": 4.7,
+   "humidity": 78,
+   "cloudCover": 1,
+   "windSpeed": 1.24,
+   "windDirection": 180
+  },
+  {
+   "hour": 2,
+   "temperature": 4.1,
+   "humidity": 79,
+   "cloudCover": 3,
+   "windSpeed": 1.6,
+   "windDirection": 191
+  },
+  {
+   "hour": 3,
+   "temperature": 3.6,
+   "humidity": 75,
+   "cloudCover": 24,
+   "windSpeed": 2.0,
+   "windDirection": 195
+  },
+  {
+   "hour": 4,
+   "temperature": 3.3,
+   "humidity": 77,
+   "cloudCover": 10,
+   "windSpeed": 2.56,
+   "windDirection": 174
+  },
+  {
+   "hour": 5,
+   "temperature": 3.3,
+   "humidity": 79,
+   "cloudCover": 6,
+   "windSpeed": 2.41,
+   "windDirection": 190
+  },
+  {
+   "hour": 6,
+   "temperature": 3.7,
+   "humidity": 70,
+   "cloudCover": 1,
+   "windSpeed": 2.41,
+   "windDirection": 190
+  },
+  {
+   "hour": 7,
+   "temperature": 3.6,
+   "humidity": 68,
+   "cloudCover": 0,
+   "windSpeed": 2.3,
+   "windDirection": 195
+  },
+  {
+   "hour": 8,
+   "temperature": 4.7,
+   "humidity": 77,
+   "cloudCover": 0,
+   "windSpeed": 2.21,
+   "windDirection": 213
+  },
+  {
+   "hour": 9,
+   "temperature": 7.6,
+   "humidity": 84,
+   "cloudCover": 4,
+   "windSpeed": 1.58,
+   "windDirection": 49
+  },
+  {
+   "hour": 10,
+   "temperature": 9.9,
+   "humidity": 74,
+   "cloudCover": 3,
+   "windSpeed": 2.83,
+   "windDirection": 57
+  },
+  {
+   "hour": 11,
+   "temperature": 11.7,
+   "humidity": 63,
+   "cloudCover": 3,
+   "windSpeed": 3.58,
+   "windDirection": 69
+  },
+  {
+   "hour": 12,
+   "temperature": 13.1,
+   "humidity": 54,
+   "cloudCover": 0,
+   "windSpeed": 2.78,
+   "windDirection": 52
+  },
+  {
+   "hour": 13,
+   "temperature": 13.9,
+   "humidity": 54,
+   "cloudCover": 0,
+   "windSpeed": 3.19,
+   "windDirection": 56
+  },
+  {
+   "hour": 14,
+   "temperature": 14.0,
+   "humidity": 54,
+   "cloudCover": 0,
+   "windSpeed": 3.38,
+   "windDirection": 49
+  },
+  {
+   "hour": 15,
+   "temperature": 14.5,
+   "humidity": 56,
+   "cloudCover": 0,
+   "windSpeed": 3.48,
+   "windDirection": 54
+  },
+  {
+   "hour": 16,
+   "temperature": 14.5,
+   "humidity": 57,
+   "cloudCover": 0,
+   "windSpeed": 3.38,
+   "windDirection": 33
+  },
+  {
+   "hour": 17,
+   "temperature": 14.2,
+   "humidity": 60,
+   "cloudCover": 0,
+   "windSpeed": 3.59,
+   "windDirection": 27
+  },
+  {
+   "hour": 18,
+   "temperature": 12.9,
+   "humidity": 53,
+   "cloudCover": 0,
+   "windSpeed": 2.72,
+   "windDirection": 21
+  },
+  {
+   "hour": 19,
+   "temperature": 11.1,
+   "humidity": 53,
+   "cloudCover": 0,
+   "windSpeed": 1.8,
+   "windDirection": 11
+  },
+  {
+   "hour": 20,
+   "temperature": 10.0,
+   "humidity": 47,
+   "cloudCover": 0,
+   "windSpeed": 1.28,
+   "windDirection": 336
+  },
+  {
+   "hour": 21,
+   "temperature": 8.8,
+   "humidity": 62,
+   "cloudCover": 0,
+   "windSpeed": 1.12,
+   "windDirection": 25
+  },
+  {
+   "hour": 22,
+   "temperature": 7.9,
+   "humidity": 65,
+   "cloudCover": 0,
+   "windSpeed": 0.54,
+   "windDirection": 216
+  },
+  {
+   "hour": 23,
+   "temperature": 7.1,
+   "humidity": 66,
+   "cloudCover": 0,
+   "windSpeed": 1.39,
+   "windDirection": 306
+  }
+ ],
+ "source": "Open-Meteo",
+ "date": "2026-09-24",
+ "timezone": "America/New_York"
+}

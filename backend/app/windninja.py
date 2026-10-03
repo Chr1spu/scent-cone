@@ -271,7 +271,7 @@ def run_windninja(area: Area, date: str, hours: list[int], progress=lambda f, m:
         done += _store_outputs(area, date, collect_outputs(out_dir), [hr], default_hour=hr)
         if method == "cached":
             method = "domainAverage"
-        elif not method.endswith("+domainAverage"):
+        elif "domainAverage" not in method:
             method += "+domainAverage"
     progress(1.0, "WindNinja done")
     return {"source": "windninja", "method": method, "hours": sorted(set(done))}

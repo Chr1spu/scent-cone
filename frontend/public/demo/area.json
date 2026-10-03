@@ -1,0 +1,82 @@
+{
+  "name": "Devil's Tombstone Campground, Catskills NY",
+  "scenario": "At 4:00 PM a 9-year-old wandered away from a campsite. Sunset is ~7:00 PM. Three dog teams are available. Where do we send them?",
+  "areaId": "b8b4158731",
+  "lat": 42.1589,
+  "lon": -74.2047,
+  "epsg": 32618,
+  "timezone": "America/New_York",
+  "utcOffsetSeconds": -14400,
+  "date": "2026-09-24",
+  "startHour": 14,
+  "endHour": 22,
+  "missingAt": 16.0,
+  "overviewMeta": {
+    "crs": "EPSG:32618",
+    "originX": 559710.0,
+    "originY": 4673730.0,
+    "cellSize": 30,
+    "cols": 400,
+    "rows": 400,
+    "noData": -9999.0
+  },
+  "detailMeta": {
+    "crs": "EPSG:32618",
+    "originX": 564210.0,
+    "originY": 4669230.0,
+    "cellSize": 10,
+    "cols": 300,
+    "rows": 300,
+    "noData": -9999.0
+  },
+  "lkp": {
+    "x": 565700.9506222045,
+    "y": 4667725.016983475,
+    "lat": 42.1589,
+    "lon": -74.2047,
+    "label": "Campsite (LKP)"
+  },
+  "truth": {
+    "x": 566230.9506222045,
+    "y": 4667535.016983475
+  },
+  "focus": {
+    "x": 565710,
+    "y": 4667730,
+    "size": 3000
+  },
+  "profile": "child712",
+  "teams": 3,
+  "windSource": "windninja",
+  "windMethod": "domainAverage",
+  "windHours": [
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22
+  ],
+  "windNinjaHours": [
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22
+  ],
+  "sources": {
+    "terrain_overview": "USGS 3DEP (bare earth)",
+    "landcover_overview": "NLCD 2021",
+    "terrain_detail": "USGS 3DEP (bare earth)",
+    "landcover_detail": "NLCD 2021",
+    "weather": "Open-Meteo"
+  },
+  "warnings": []
+}
