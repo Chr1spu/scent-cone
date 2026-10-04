@@ -12,3 +12,6 @@ backend/data/*.tif
 *.log
 .vite/
 tools/
+
+# local notes, never committed
+docs/NEXT_STEPS.md
