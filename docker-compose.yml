@@ -2,6 +2,7 @@ services:
   backend:
     build: ./backend
     image: scentline-backend
+    restart: unless-stopped   # comes back after a reboot when Docker Desktop starts
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

@@ -11,3 +11,4 @@ backend/data/*.tif
 .DS_Store
 *.log
 .vite/
+tools/
