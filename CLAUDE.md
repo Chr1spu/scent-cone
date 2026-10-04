@@ -1,12 +1,12 @@
-# CLAUDE.md — Scent Cone build spec
+# CLAUDE.md — Scentline build spec
 
-This file is the single source of truth for building Scent Cone. Read it fully before writing code. Build in the milestone order at the bottom, one milestone at a time, and stop at each acceptance check.
+This file is the single source of truth for building Scentline (originally named Scent Cone). Read it fully before writing code. Build in the milestone order at the bottom, one milestone at a time, and stop at each acceptance check.
 
 ---
 
 ## 1. What we are building
 
-Scent Cone is a web app that helps search-and-rescue (SAR) teams decide **where and when to deploy air-scent dogs** to find a missing person.
+Scentline is a web app that helps search-and-rescue (SAR) teams decide **where and when to deploy air-scent dogs** to find a missing person.
 
 It shows the search area as interactive 3D terrain, computes terrain-adjusted wind with the US Forest Service's **WindNinja** model, simulates how human scent drifts from the person's likely locations, and recommends dog deployment points. When dogs alert (or find nothing), it updates where the person probably is.
 
@@ -64,7 +64,7 @@ Assets: user-supplied `.glb` models go in `frontend/public/models/`. Expected fi
 ## 4. Repository layout
 
 ```
-scent-cone/
+scentline/
   CLAUDE.md
   README.md
   frontend/

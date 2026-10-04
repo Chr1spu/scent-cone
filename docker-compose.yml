@@ -1,3 +1,6 @@
+# fixed project name, so containers are scentline-* whatever the folder is called
+name: scentline
+
 services:
   backend:
     build: ./backend
