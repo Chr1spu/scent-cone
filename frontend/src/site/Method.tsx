@@ -1,5 +1,5 @@
 import { ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, TRIANGULATION, type ProfileId } from '../config/modelParams';
-import { MISSIONS, MISSION_ORDER, type SourceKind } from '../config/missions';
+import { MISSIONS, visibleMissions, type SourceKind } from '../config/missions';
 import { noseWindFactor, LC } from '../models/terrainInfo';
 import { Link } from '../router';
 import { PlumeDiagram, TriangulationDiagram, WindProfileDiagram } from './Diagrams';
@@ -239,8 +239,9 @@ export function Method() {
 
           <h2 id="missions">Kinds of search</h2>
           <p>
-            Every kind of search runs the same wind and scent model. What changes is where the target can be, how long its scent lasts, how easily it lifts away, how likely a dog is to
-            detect it, and where teams can stand. Each also carries its own limits.
+            Three modes run the same wind and scent model: a live search for a missing person, planning a training problem, and recovery with human-remains dogs. What changes is
+            where the target can be, how long its scent lasts, how easily it lifts away, how likely a dog is to detect it, and where teams can stand. The engine can also be set up for
+            water, conservation, evidence, disaster and lost-pet searches; those are experimental and not shown.
           </p>
           <table>
             <thead>
@@ -254,7 +255,7 @@ export function Method() {
               </tr>
             </thead>
             <tbody>
-              {MISSION_ORDER.map((m) => {
+              {visibleMissions().map((m) => {
                 const x = MISSIONS[m];
                 return (
                   <tr key={m}>
@@ -272,7 +273,7 @@ export function Method() {
             </tbody>
           </table>
           <ul>
-            {MISSION_ORDER.map((m) => (
+            {visibleMissions().map((m) => (
               <li key={m}>
                 <strong>{MISSIONS[m].label}:</strong> {MISSIONS[m].caveat}
               </li>

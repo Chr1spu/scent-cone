@@ -1,5 +1,5 @@
 import { setMission, setView, setWindSource } from '../state/controller';
-import { MISSIONS, MISSION_ORDER, type MissionId } from '../config/missions';
+import { MISSIONS, visibleMissions, type MissionId } from '../config/missions';
 import { useStore } from '../state/store';
 import { Link } from '../router';
 import { Icon, Logo } from '../ui/icons';
@@ -50,7 +50,7 @@ export function PlannerBar() {
       disabled={!bundle}
       onChange={(e) => pickMission(e.target.value as MissionId)}
     >
-      {MISSION_ORDER.map((m) => (
+      {visibleMissions().map((m) => (
         <option key={m} value={m}>
           {MISSIONS[m].label}
         </option>

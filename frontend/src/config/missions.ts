@@ -170,6 +170,22 @@ export const MISSIONS: Record<MissionId, Mission> = {
 
 export const MISSION_ORDER: MissionId[] = ['wilderness', 'cadaver', 'training', 'water', 'conservation', 'evidence', 'disaster', 'pet'];
 
+/** The supported kinds of search; the others are experimental and hidden. */
+export const CORE_MISSIONS: MissionId[] = ['wilderness', 'training', 'cadaver'];
+
+/** Missions to offer in menus. Add ?experimental=1 to any page once to show all eight. */
+export function visibleMissions(): MissionId[] {
+  try {
+    const q = new URLSearchParams(location.search).get('experimental');
+    if (q === '1') localStorage.setItem('scentcone.experimental', '1');
+    if (q === '0') localStorage.removeItem('scentcone.experimental');
+    if (localStorage.getItem('scentcone.experimental') === '1') return MISSION_ORDER;
+  } catch {
+    /* no storage */
+  }
+  return CORE_MISSIONS;
+}
+
 export function isMission(x: string | null | undefined): x is MissionId {
   return !!x && x in MISSIONS;
 }

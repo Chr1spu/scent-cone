@@ -62,9 +62,10 @@ export function Guide() {
 
         <h2>Kinds of search</h2>
         <p>
-          The menu at the top of the planner switches between eight kinds of search: missing person, recovery with cadaver dogs, training problems, water search, conservation
-          detection, evidence search, outdoor disaster and lost pets. The first section of the left panel changes with it: a subject profile, hides to place, an area to draw, or
-          habitat to choose. The Notes tab explains each one and its limits. Every kind works in the Catskills demo, including water search on Notch Lake next to the campsite.
+          The menu at the top of the planner switches between three modes. <strong>Missing person</strong> is the live search. <strong>Training problem</strong> lets you place
+          hides and see where their scent goes before the session, hour by hour, with start points for the dog. <strong>Recovery</strong> sets the model up for human-remains dogs:
+          longer-lasting scent that pools in low ground. The first section of the left panel changes with the mode, and the Notes tab explains each one and its limits. All three
+          work in the Catskills demo.
         </p>
 
         <h2>The planner screen</h2>
