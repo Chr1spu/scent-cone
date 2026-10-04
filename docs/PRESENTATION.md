@@ -35,7 +35,7 @@ Two minutes before you start, open these tabs in order and hard-refresh each one
 
 ## The 2-minute script
 
-If you run long, cut the alert line.
+Start a live area early, explain the three maps (where they might be, where the scent goes, where to send teams) while it computes, then show the result. If you run long, cut the alert line.
 
 **0:00 – Tab 1, the hero (15 s)**
 
@@ -45,27 +45,29 @@ If you run long, cut the alert line.
 
 Do: zoom into your chosen mountains, click a spot, leave "Today, from the current forecast" selected, click **Open the planner**.
 
-> "Let's start a real search right now, somewhere we haven't prepared. It's downloading real elevation, land cover, trails and today's forecast, and running the US Forest Service's WindNinja wind model for the next 8 hours. While that runs, here's what it's doing."
+> "Let's start a real search right now, somewhere we haven't prepared. It's downloading real elevation, land cover, trails and today's forecast, and running the US Forest Service's WindNinja wind model. While that runs, here's how it works."
 
-**0:30 – Tab 1, scroll the story (50 s)**
+**0:30 – Tab 1, scroll the story (55 s)**
 
 Do: leave tab 2 loading. Scroll slowly and pause about a second at each card before speaking.
 
-1. Campsite: "Our example: a 9-year-old wanders away from a campsite at 4 PM. Sunset is at 7."
-2. Wind: "WindNinja works out the wind over the real terrain, hour by hour. It bends around every ridge."
-3. Scent: "We release scent at dog-nose height from every likely spot. At dusk the air cools and the scent drains downhill like water, so the best place to smell a hillside is often the valley below it."
-4. Deploy: "Each team gets a start point downwind of the likely ground, a heading into the wind and its best hour."
-5. Alert: "When a dog alerts, we trace the scent backwards. Overlapping alerts narrow the search to a few hundred metres."
+1. Campsite, the probability map: "A 9-year-old wanders away from a campsite at 4 PM. First question: where might they be? Scentline builds a probability map from lost-person statistics: how far people of that age and type usually travel, pulled toward trails and streams, less likely on steep slopes, and cut off by rivers and cliffs."
+2. Wind: "Then WindNinja works out the wind over the real terrain, hour by hour."
+3. Scent: "Every likely spot on that map releases scent at dog-nose height, weighted by how likely it is. At dusk the air cools and the scent drains downhill like water, so the best place to smell a hillside is often the valley below it."
+4. Deploy: "Teams start downwind of the most likely ground, heading into the wind, at their best hour."
+5. Alert: "When a dog alerts, we trace the scent backwards, and the probability map updates to narrow the search."
 
-**1:20 – Tab 2, the live result (30 s)**
+**1:25 – Tab 2, the live result (25 s)**
 
 > "And it's done, in about 40 seconds, for a place we picked live."
 
-Do: drag the view a little ("Real terrain, with today's forecast wind"), click **Release scent**, then **Deploy**, and point at the team cards on the right.
+Do: point at the blue tint around the point you picked.
 
-> "Scent and team placements, for this exact spot, right now."
+> "That blue is the probability map: where a lost person is most likely to be, on real terrain."
 
-Optional: in the Plan tab, click **Read briefing** for the spoken radio briefing.
+Do: click **Release scent**, then **Deploy**, and point at the team cards on the right.
+
+> "And here's where the scent goes, and where to send each team, for this exact spot, right now."
 
 **1:50 – Close (10 s)**
 
@@ -76,7 +78,7 @@ Optional: in the Plan tab, click **Read briefing** for the spoken radio briefing
 | Problem | What to do |
 | --- | --- |
 | Tab 2 says "No server" or shows an error | Switch to tab 3: "Here's the same thing for our prepared Catskills scenario." Drag the time bar from 16:00 to 19:00, then click **Deploy**. |
-| The live area is still loading at 1:20 | Keep talking (add the alert line or a Q&A answer), then switch over. |
+| The live area is still loading at 1:25 | Keep talking (add the alert line or a Q&A answer), then switch over. |
 | The 3D home page is slow or blank | Present from the pitch deck, or play `pitch/video/scentline-demo.mp4`. |
 | No internet at all | Tab 3 still works if it's already loaded; otherwise play the video. |
 
