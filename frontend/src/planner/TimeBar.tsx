@@ -109,22 +109,24 @@ export function TimeBar() {
           )}
         </div>
       </div>
-      <div className="flex items-center gap-3 text-[13px] text-ink-2">
-        <span className="flex items-center gap-1" title="Sun elevation">
+      {/* fixed-width readouts: their text changes while dragging, the slider must not resize */}
+      <div className="flex shrink-0 items-center gap-3 whitespace-nowrap text-[13px] text-ink-2">
+        <span className="flex w-[52px] items-center gap-1" title="Sun elevation">
           <Icon.Sun size={14} />
           <span className="num">{env.sun.elevation.toFixed(0)}°</span>
         </span>
-        <span className="flex items-center gap-1" title="Average model wind at 2 m">
+        <span className="flex w-[118px] items-center gap-1" title="Average model wind at 2 m">
           <Icon.Wind size={14} />
-          <span className="num">{mean.speed.toFixed(1)}</span> m/s {compass(mean.dir)}
+          <span className="num">{mean.speed.toFixed(1)}</span> m/s <span className="num w-[30px]">{compass(mean.dir)}</span>
         </span>
-        <span className="hidden items-center gap-1 lg:flex" title="Temperature and humidity">
+        <span className="hidden w-[112px] items-center gap-1 lg:flex" title="Temperature and humidity">
           <Icon.Thermo size={14} />
           <span className="num">{env.temperature.toFixed(0)}°C</span>, <span className="num">{env.humidity.toFixed(0)}%</span>
         </span>
       </div>
-      <div className="text-[13px]" title={info.q.reason}>
-        Scent: <strong className={tone}>{label}</strong> <span className="hidden text-ink-3 sm:inline">({detail})</span>
+      <div className="flex w-[96px] shrink-0 items-baseline gap-1 whitespace-nowrap text-[13px] sm:w-[260px] xl:w-[330px]" title={`${label}: ${detail}`}>
+        Scent: <strong className={`w-[34px] shrink-0 ${tone}`}>{label}</strong>
+        <span className="hidden min-w-0 truncate text-ink-3 sm:inline">({detail})</span>
       </div>
     </div>
   );
