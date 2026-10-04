@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { COLORS, LANDCOVER_CLASSES } from '../config/constants';
 import { Link } from '../router';
 import { FEATURE_COLORS } from '../scene/FeatureLines';
 import { fmtTime } from '../state/controller';
 import { useStore } from '../state/store';
 import { MISSIONS } from '../config/missions';
+import { Icon } from '../ui/icons';
+import { briefingText, speakBriefing, stopBriefing, type Voice } from './briefing';
 
 type Tab = 'plan' | 'legend' | 'notes';
 
@@ -31,6 +33,49 @@ function Key({ color, label, line }: { color: string; label: string; line?: bool
 
 const compass = (deg: number) => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(deg / 45) % 8];
 
+/** Reads the plan aloud: Grok Voice via the server when configured, else the browser's voice. */
+function Briefing() {
+  const deployments = useStore((s) => s.deployments);
+  const time = useStore((s) => s.time);
+  const lkp = useStore((s) => s.lkp);
+  const area = useStore((s) => s.bundle?.config.name ?? 'this area');
+  const [state, setState] = useState<'idle' | 'loading' | 'playing'>('idle');
+  const [voice, setVoice] = useState<Voice | null>(null);
+  // a new plan (or leaving the tab) stops the old briefing
+  useEffect(() => () => stopBriefing(), [deployments]);
+  const text = briefingText({ area, time, lkp, deployments });
+  const play = async () => {
+    if (state !== 'idle') {
+      stopBriefing();
+      setState('idle');
+      return;
+    }
+    setState('loading');
+    const v = await speakBriefing(text, () => setState('idle'));
+    if (v) {
+      setVoice(v);
+      setState('playing');
+    } else setState('idle');
+  };
+  return (
+    <div className="rounded-sm border border-rule bg-card px-2.5 py-2">
+      <div className="flex items-center gap-2">
+        <button className={`btn btn-sm ${state === 'idle' ? 'btn-primary' : ''}`} onClick={play} aria-pressed={state !== 'idle'}>
+          {state === 'idle' ? <Icon.Play size={12} /> : <Icon.Pause size={12} />}
+          {state === 'idle' ? 'Read briefing' : state === 'loading' ? 'Preparing…' : 'Stop'}
+        </button>
+        <span className="text-[11px] leading-tight text-ink-3">
+          {voice === 'grok' ? 'Spoken by Grok Voice' : voice === 'browser' ? 'Browser voice (Grok Voice not available)' : 'For the radio: every team in one go'}
+        </span>
+      </div>
+      <details className="mt-1.5 text-[12px] leading-snug text-ink-2">
+        <summary className="cursor-pointer text-[11px] text-ink-3 hover:text-ink">Briefing text</summary>
+        <p className="mt-1">{text}</p>
+      </details>
+    </div>
+  );
+}
+
 function Plan() {
   const deployments = useStore((s) => s.deployments);
   const time = useStore((s) => s.time);
@@ -43,6 +88,7 @@ function Plan() {
   }
   return (
     <div className="space-y-2">
+      <Briefing />
       <p className="text-xs text-ink-3">Planned for {fmtTime(time)}. Bars: scent score for each hour at that point.</p>
       {deployments.map((d) => {
         const color = COLORS.team[(d.team - 1) % COLORS.team.length];

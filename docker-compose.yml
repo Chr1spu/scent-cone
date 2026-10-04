@@ -19,3 +19,6 @@ services:
       - CORS_ORIGINS=*
       - WINDNINJA_THREADS=${BACKEND_CPUS:-8}
       - MAX_RUNNING_JOBS=${MAX_RUNNING_JOBS:-1}
+      # spoken team briefings (Grok Voice); put XAI_API_KEY in .env next to this file
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - XAI_TTS_VOICE=${XAI_TTS_VOICE:-}

@@ -19,6 +19,7 @@ const CONTROLS: [string, string][] = [
   ['Heatmap', 'Scent of the last hour and the hotspots. Recomputed when the time changes (about 2 s).'],
   ['Teams, Deploy', 'Number of teams (1 to 6) and the deployment itself.'],
   ['Time bar', 'An 8-hour forecast window in the area’s local time, starting when the person went missing (▲). Dragging it changes wind, sun, temperature and scent to that hour; it is a planning clock and does not follow the real clock. For searches running today, a green NOW marker shows the current time: click it to jump there.'],
+  ['Read briefing', 'In the Plan tab after Deploy: reads every team’s start point, heading, wind, best hour and coverage aloud, ready to relay by radio. Spoken by Grok Voice when the server has an xAI key, otherwise by the browser’s voice.'],
   ['Add alert', 'Click where a dog alerted, at the time on the time bar.'],
   ['Searched', 'Mark an area a team covered without an alert: a circle (choose the radius) or a polygon (click corners, then Finish), over a 30 to 120 minute window ending at the time bar.'],
   ['On-site wind', 'Enter the wind a team measured (direction it comes from, speed). It replaces the forecast for that hour in the fallback model.'],

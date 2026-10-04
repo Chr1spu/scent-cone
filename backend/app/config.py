@@ -47,3 +47,5 @@ MAX_HOUR = 47                  # hours count from the start date's midnight
 # per client IP: (requests, window seconds)
 RATE_LIMIT_AREAS = (20, 600)
 RATE_LIMIT_WIND = (10, 600)
+# spoken briefings (each is a paid xAI call unless cached)
+RATE_LIMIT_TTS = (30, 600)

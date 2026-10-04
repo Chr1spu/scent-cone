@@ -63,6 +63,19 @@ Live mode fetches USGS 3DEP terrain, NLCD land cover, OpenStreetMap features and
 * **Search area (live):** type any latitude/longitude (it becomes the last known point), a date and a start hour, or tick **Today, from the current hour** for a real-time run. For today, WindNinja is initialised from NOAA's live **HRRR 3 km forecast**; past dates use Open-Meteo hourly wind (domain-average initialisation). Time zones are looked up from the coordinates. A window can run past midnight (for example 20:00 to 04:00); each hour uses its own calendar date.
 * **Move focus → Compute detail:** drag the 3 km square somewhere else in the 12 km area and recompute it.
 
+### Spoken team briefings (Grok Voice)
+
+After **Deploy**, the Plan tab has **Read briefing**: a radio-style briefing for every team (start point relative to the last known point, heading into the wind, wind speed, best hour, coverage), built only from the deployment results. With an xAI key on the server it is spoken by Grok Voice (`POST /api/tts` on the backend, which calls `https://api.x.ai/v1/tts` and caches each briefing); without one, or offline, the browser's own voice reads it.
+
+To enable Grok Voice, create `.env` next to `docker-compose.yml` (it is git-ignored) and restart the server:
+
+```
+XAI_API_KEY=your-xai-key
+# optional: XAI_TTS_VOICE=eve   (any built-in Grok voice, e.g. Ara, Rex, Sal, Leo)
+```
+
+`/api/health` then reports `"tts": true`. The key never reaches the website; `/api/tts` is rate-limited (30 requests per 10 minutes per client).
+
 ### Rebuild the demo bundle
 
 ```bash

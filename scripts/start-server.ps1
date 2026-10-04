@@ -43,7 +43,7 @@ Write-Host 'Docker is running.'
 # ---------------------------------------------------------------- 2. Server
 Step "Server on http://localhost:$Port"
 $env:BACKEND_PORT = "$Port"
-docker compose up -d
+docker compose up -d --build   # rebuilds only what changed (WindNinja layers stay cached)
 if ($LASTEXITCODE -ne 0) { throw 'docker compose up failed.' }
 $deadline = (Get-Date).AddMinutes(2)
 while ($true) {

@@ -8,11 +8,11 @@ import os
 import re
 
 import numpy as np
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
-from . import config, jobs, windninja
+from . import config, jobs, tts, windninja
 from .areas import Area, create_area, load_area
 from .encode import grid_response
 from .features import fetch_features
@@ -34,6 +34,7 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], a
 # per-client limits on the endpoints that download data or start WindNinja
 area_limit = RateLimit(*config.RATE_LIMIT_AREAS)
 wind_limit = RateLimit(*config.RATE_LIMIT_WIND)
+tts_limit = RateLimit(*config.RATE_LIMIT_TTS)
 
 _OV_MIN, _OV_MAX = config.OVERVIEW_SIZE_RANGE_M
 _DT_MIN, _DT_MAX = config.DETAIL_SIZE_RANGE_M
@@ -97,7 +98,25 @@ def _level(level: str) -> str:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "windninja": windninja.available()}
+    return {"ok": True, "windninja": windninja.available(), "tts": tts.available()}
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=tts.MAX_CHARS)
+
+
+@app.post("/api/tts", dependencies=[Depends(tts_limit.dependency)])
+def post_tts(req: TTSRequest):
+    """Speak a team briefing with Grok Voice (MP3). 503 when no xAI key is configured."""
+    if not tts.available():
+        raise HTTPException(503, "Text-to-speech is not configured on this server (set XAI_API_KEY).")
+    try:
+        audio = tts.synthesize(req.text)
+    except tts.TTSError as e:
+        raise HTTPException(502, str(e)) from e
+    except Exception as e:  # network errors and the like
+        raise HTTPException(502, f"Text-to-speech failed: {e}") from e
+    return Response(audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/areas", dependencies=[Depends(area_limit.dependency)])
