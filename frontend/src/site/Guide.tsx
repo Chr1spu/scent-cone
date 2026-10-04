@@ -50,7 +50,7 @@ export function Guide() {
             <div key={w.key} className="grid items-start gap-5 md:grid-cols-[1fr_1.3fr]">
               <div>
                 <div className="flex items-center gap-2">
-                  <kbd className="num inline-flex h-7 w-7 items-center justify-center rounded border border-ink bg-white text-sm font-medium">{w.key}</kbd>
+                  <kbd className="num inline-flex h-7 w-7 items-center justify-center rounded border border-ink bg-card text-sm font-medium">{w.key}</kbd>
                   <h3 className="!m-0 font-display text-2xl font-bold">{w.title}</h3>
                 </div>
                 <p className="mt-2 font-serif text-[16px] leading-relaxed text-ink-2">{w.text}</p>
@@ -95,7 +95,7 @@ export function Guide() {
             {KEYS.map(([k, v]) => (
               <tr key={k}>
                 <td className="whitespace-nowrap">
-                  <kbd className="num rounded border border-rule bg-white px-1.5 py-0.5 text-xs">{k}</kbd>
+                  <kbd className="num rounded border border-rule bg-card px-1.5 py-0.5 text-xs">{k}</kbd>
                 </td>
                 <td>{v}</td>
               </tr>

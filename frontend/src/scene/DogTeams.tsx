@@ -7,6 +7,7 @@ import { fmtTime } from '../state/controller';
 import { useStore } from '../state/store';
 import type { DeploymentOut } from '../workers/protocol';
 import { Beacon, DrapedLine, Label, MODEL_SCALE, circlePts } from './primitives';
+import { useDog } from './assets';
 import { useModel } from './useModel';
 
 function PlaceholderDog({ color }: { color: string }) {
@@ -57,6 +58,8 @@ function PlaceholderHandler({ color }: { color: string }) {
 
 function Team({ bundle, d }: { bundle: AreaBundle; d: DeploymentOut }) {
   const color = COLORS.team[(d.team - 1) % COLORS.team.length];
+  // animated rescue dog working the scent (falls back to the static model, then a primitive)
+  const dogRig = useDog('sniff', { offset: (d.team * 0.37) % 1 });
   const dogGlb = useModel('dog.glb');
   const handlerGlb = useModel('handler.glb');
   const p = toScene(bundle, d.x, d.y);
@@ -79,7 +82,7 @@ function Team({ bundle, d }: { bundle: AreaBundle; d: DeploymentOut }) {
     <group>
       <group position={p} rotation={[0, rotY, 0]}>
         <group position={[4, 0, 0]} scale={MODEL_SCALE}>
-          {dogGlb ? <primitive object={dogGlb} /> : <PlaceholderDog color={color} />}
+          {dogRig ? <primitive object={dogRig} scale={0.75} /> : dogGlb ? <primitive object={dogGlb} /> : <PlaceholderDog color={color} />}
         </group>
         <group position={[-8, 0, 6]} scale={MODEL_SCALE}>
           {handlerGlb ? <primitive object={handlerGlb} /> : <PlaceholderHandler color={color} />}

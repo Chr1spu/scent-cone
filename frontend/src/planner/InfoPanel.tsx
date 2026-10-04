@@ -49,7 +49,7 @@ function Plan() {
         const maxS = Math.max(...d.windowScores.map((w) => w.score), 1e-6);
         const dir = Math.round(((Math.atan2(d.upwind[0], d.upwind[1]) * 180) / Math.PI + 360) % 360);
         return (
-          <div key={d.team} className="rounded-sm border border-rule bg-white px-2.5 py-2 text-[13px]">
+          <div key={d.team} className="rounded-sm border border-rule bg-card px-2.5 py-2 text-[13px]">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 font-semibold">
                 <span className="h-3 w-3 rounded-full" style={{ background: color }} />
@@ -65,7 +65,7 @@ function Plan() {
                 <div
                   key={w.hour}
                   className="flex-1"
-                  style={{ height: `${12 + 88 * (w.score / maxS)}%`, background: w.hour === d.bestWindow[1] ? color : '#d3c9b2' }}
+                  style={{ height: `${12 + 88 * (w.score / maxS)}%`, background: w.hour === d.bestWindow[1] ? color : 'rgb(var(--rule))' }}
                   title={`${w.hour - 1}:00 to ${w.hour}:00`}
                 />
               ))}
@@ -120,7 +120,7 @@ function Notes() {
   const sources = Object.values(bundle?.config.sources ?? {}).filter((v, i, a) => a.indexOf(v) === i);
   return (
     <div className="space-y-2 text-[13px] leading-relaxed text-ink-2">
-      <div className="rounded-sm border border-rule bg-white p-2">
+      <div className="rounded-sm border border-rule bg-card p-2">
         <div className="font-semibold text-ink">{mission.label}</div>
         <p className="mt-0.5">{mission.about}</p>
         <ol className="mt-1.5 list-decimal space-y-0.5 pl-4">
@@ -161,20 +161,20 @@ export function InfoPanel() {
   ];
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 border-b border-rule" role="tablist">
+      <div className="m-2 flex shrink-0 gap-1 rounded-lg bg-paper-2 p-1" role="tablist">
         {tabs.map(([t, label]) => (
           <button
             key={t}
             role="tab"
             aria-selected={tab === t}
-            className={`flex-1 py-2 text-[13px] font-semibold ${tab === t ? 'border-b-2 border-sar text-ink' : 'border-b-2 border-transparent text-ink-3 hover:text-ink'}`}
+            className={`flex-1 rounded-md py-1.5 text-[13px] font-semibold transition ${tab === t ? 'bg-card text-ink shadow-key' : 'text-ink-3 hover:text-ink'}`}
             onClick={() => setTab(t)}
           >
             {label}
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {tab === 'plan' && <Plan />}
         {tab === 'legend' && <Legend />}
         {tab === 'notes' && <Notes />}

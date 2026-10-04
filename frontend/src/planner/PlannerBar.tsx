@@ -7,11 +7,11 @@ import { useIsMobile } from '../ui/useIsMobile';
 
 function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: { v: T; label: string; disabled?: boolean; title?: string }[]; onChange: (v: T) => void; label: string }) {
   return (
-    <div className="flex overflow-hidden rounded border border-rule" role="group" aria-label={label}>
-      {options.map((o, i) => (
+    <div className="flex gap-0.5 rounded-md bg-paper-2 p-0.5" role="group" aria-label={label}>
+      {options.map((o) => (
         <button
           key={o.v}
-          className={`px-2.5 py-1 text-[13px] font-medium ${i ? 'border-l border-rule' : ''} ${value === o.v ? 'bg-ink text-paper' : 'bg-paper text-ink-2 hover:bg-paper-2'} disabled:opacity-40`}
+          className={`rounded-sm px-2.5 py-1 text-[13px] font-semibold transition ${value === o.v ? 'bg-card text-ink shadow-key' : 'text-ink-3 hover:text-ink'} disabled:opacity-40`}
           disabled={o.disabled}
           title={o.title}
           aria-pressed={value === o.v}
@@ -58,10 +58,10 @@ export function PlannerBar() {
     </select>
   );
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-rule bg-paper px-3">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-rule bg-paper px-3">
       <Link to="/" className="flex items-center gap-1.5 text-ink no-underline hover:text-ink" title="Scentline home">
-        <Logo size={24} />
-        <span className="hidden font-display text-lg font-bold sm:inline">Scentline</span>
+        <Logo size={26} />
+        <span className="hidden font-display text-lg font-bold tracking-tight sm:inline">Scentline</span>
       </Link>
       <div className="h-6 w-px bg-rule" />
       <div className="min-w-0 leading-tight">

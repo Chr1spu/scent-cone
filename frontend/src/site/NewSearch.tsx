@@ -158,7 +158,7 @@ export function NewSearch() {
               {visibleMissions().map((m) => (
                 <button
                   key={m}
-                  className={`rounded border px-2.5 py-2 text-left ${mission === m ? 'border-ink bg-white' : 'border-rule hover:border-ink-3'}`}
+                  className={`rounded border px-2.5 py-2 text-left ${mission === m ? 'border-ink bg-card' : 'border-rule hover:border-ink-3'}`}
                   onClick={() => chooseMission(m)}
                   aria-pressed={mission === m}
                 >
@@ -179,7 +179,7 @@ export function NewSearch() {
             </form>
             {searchError && <p className="mt-1.5 text-xs text-sar-dark">{searchError}</p>}
             {results && (
-              <ul className="mt-2 divide-y divide-rule rounded border border-rule bg-white">
+              <ul className="mt-2 divide-y divide-rule rounded border border-rule bg-card">
                 {results.length === 0 && <li className="px-3 py-2 text-sm text-ink-3">No places found.</li>}
                 {results.map((r, i) => (
                   <li key={i}>
@@ -211,7 +211,7 @@ export function NewSearch() {
               </button>
               <span className="text-xs text-ink-3">or click the map; drag the marker to adjust.</span>
             </div>
-            <div className="mt-3 rounded border border-rule bg-white px-3 py-2 text-sm">
+            <div className="mt-3 rounded border border-rule bg-card px-3 py-2 text-sm">
               {point ? (
                 <>
                   <div className="font-medium">{placeName ?? 'Selected point'}</div>
@@ -269,7 +269,7 @@ export function NewSearch() {
             )}
             <div className="grid gap-1.5">
               {(ms.profiles ?? []).map((id) => (
-                <label key={id} className={`flex cursor-pointer items-center justify-between rounded border px-3 py-2 text-sm ${profile === id ? 'border-ink bg-white' : 'border-rule hover:border-ink-3'}`}>
+                <label key={id} className={`flex cursor-pointer items-center justify-between rounded border px-3 py-2 text-sm ${profile === id ? 'border-ink bg-card' : 'border-rule hover:border-ink-3'}`}>
                   <span className="flex items-center gap-2">
                     <input type="radio" name="profile" checked={profile === id} onChange={() => setProfile(id)} className="accent-sar" />
                     {PROFILES[id].label}

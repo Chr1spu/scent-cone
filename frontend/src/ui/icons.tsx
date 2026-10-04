@@ -11,15 +11,14 @@ function Svg({ size = 16, children, ...rest }: P) {
   );
 }
 
-/** Logo: a last known point with a scent cone opening downwind, drawn as contour lines. */
+/** Logo: a last known point and a faceted (low-poly) scent cone opening downwind. */
 export function Logo({ size = 28, ...rest }: P) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden {...rest}>
-      <circle cx="7" cy="16" r="3" fill="#d4521c" />
-      <path d="M11 13.2 L29 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M11 18.8 L29 24.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M16 12.2 Q19 16 16 19.8" stroke="currentColor" strokeWidth="1.4" fill="none" />
-      <path d="M21.5 10.6 Q25.5 16 21.5 21.4" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      <circle cx="5.5" cy="16" r="2.8" fill="currentColor" />
+      <path d="M10 16 L29 5.5 L23.5 16 Z" fill="#ff6b2c" />
+      <path d="M10 16 L23.5 16 L29 26.5 Z" fill="#dc5014" />
+      <path d="M23.5 16 L29 5.5 L29 26.5 Z" fill="#ffb547" />
     </svg>
   );
 }

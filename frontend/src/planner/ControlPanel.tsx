@@ -13,8 +13,8 @@ function Section({ n, title, right, children }: { n?: number; title: string; rig
   return (
     <section className="border-b border-rule px-4 py-3.5">
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="flex items-baseline gap-1.5 text-[15px] font-semibold text-ink">
-          {n !== undefined && <span className="num text-xs font-medium text-sar-dark">{n}</span>}
+        <h2 className="flex items-center gap-2 font-display text-[15px] font-semibold tracking-tight text-ink">
+          {n !== undefined && <span className="num grid h-5 w-5 place-items-center rounded-full bg-sar/15 text-[11px] font-semibold text-sar">{n}</span>}
           {title}
         </h2>
         {right}
@@ -134,9 +134,9 @@ export function ControlPanel() {
         {tool === 'alert' && <p className="mt-1.5 text-xs text-ink-2">Click where a dog alerted. In the demo, the pink markers are radio reports.</p>}
         {tool === 'searched' && <SearchOptions />}
         {(alerts.length > 0 || searched.length > 0) && (
-          <ol className="mt-2 divide-y divide-rule rounded-sm border border-rule bg-white text-xs">
+          <ol className="mt-2 divide-y divide-rule rounded-sm border border-rule bg-card text-xs">
             {[
-              ...alerts.map((a, i) => ({ t: a.t, text: `Alert ${i + 1}: dog indicated`, tone: 'text-[#c2185b]' })),
+              ...alerts.map((a, i) => ({ t: a.t, text: `Alert ${i + 1}: dog indicated`, tone: 'text-[#ff4fa3]' })),
               ...searched.map((s) => ({ t: s.t1, text: `Searched ${fmtTime(s.t0)} to ${fmtTime(s.t1)}, no alert${s.recheck ? ', recheck' : ''}`, tone: s.recheck ? 'text-sar-dark' : 'text-ink-2' })),
             ]
               .sort((a, b) => a.t - b.t)

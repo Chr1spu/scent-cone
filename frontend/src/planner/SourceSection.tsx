@@ -96,7 +96,7 @@ export function SourceSection() {
           </ToolButton>
         </div>
         {drawing && (
-          <div className="mt-2 space-y-1.5 rounded-sm border border-rule bg-white p-2 text-[13px]">
+          <div className="mt-2 space-y-1.5 rounded-sm border border-rule bg-card p-2 text-[13px]">
             <div className="flex overflow-hidden rounded border border-rule">
               {(['circle', 'polygon'] as const).map((shape, i) => (
                 <button

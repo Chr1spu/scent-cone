@@ -12,7 +12,7 @@ export function SearchOptions() {
   const upd = (p: Partial<typeof draft>) => set({ searchDraft: { ...draft, ...p } });
   const t0 = Math.max(start, time - draft.windowMin / 60);
   return (
-    <div className="mt-2 space-y-2 rounded-sm border border-rule bg-white p-2 text-[13px]">
+    <div className="mt-2 space-y-2 rounded-sm border border-rule bg-card p-2 text-[13px]">
       <div className="flex overflow-hidden rounded border border-rule">
         {(['circle', 'polygon'] as const).map((shape, i) => (
           <button

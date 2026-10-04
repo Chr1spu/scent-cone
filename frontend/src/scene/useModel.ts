@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 export type ModelName =
   | 'dog.glb'
@@ -55,7 +56,17 @@ export function loadModel(name: ModelName): Promise<THREE.Group | null> {
         g.add(scene);
         g.userData.height = TARGET_HEIGHT_M[name];
         g.traverse((o) => {
-          if ((o as THREE.Mesh).isMesh) o.castShadow = false;
+          const m = o as THREE.Mesh;
+          if (!m.isMesh) return;
+          m.castShadow = false;
+          m.frustumCulled = false;
+          // Synty atlases are flat colour swatches: keep them crisp and matte
+          const mat = m.material as THREE.MeshStandardMaterial;
+          if (mat.map) mat.map.magFilter = THREE.NearestFilter;
+          if ('roughness' in mat) {
+            mat.roughness = 1;
+            mat.metalness = 0;
+          }
         });
         return g;
       } catch {
@@ -72,7 +83,8 @@ export function useModel(name: ModelName): THREE.Group | null {
   const [model, setModel] = useState<THREE.Group | null>(null);
   useEffect(() => {
     let alive = true;
-    loadModel(name).then((m) => alive && setModel(m ? m.clone(true) : null));
+    // SkeletonUtils.clone keeps skinned meshes bound to their own cloned skeleton
+    loadModel(name).then((m) => alive && setModel(m ? (SkeletonUtils.clone(m) as THREE.Group) : null));
     return () => {
       alive = false;
     };

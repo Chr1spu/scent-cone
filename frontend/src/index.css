@@ -2,17 +2,47 @@
 @import '@fontsource/barlow/500.css';
 @import '@fontsource/barlow/600.css';
 @import '@fontsource/barlow/700.css';
-@import '@fontsource/barlow-condensed/600.css';
-@import '@fontsource/barlow-condensed/700.css';
-@import '@fontsource/source-serif-4/400.css';
-@import '@fontsource/source-serif-4/400-italic.css';
-@import '@fontsource/source-serif-4/600.css';
+@import '@fontsource-variable/bricolage-grotesque';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* interface tokens (RGB channels); .theme-dark flips them for the planner */
+:root {
+  --paper: 246 241 231;
+  --paper-2: 236 229 213;
+  --paper-3: 224 214 194;
+  --card: 255 253 248;
+  --rule: 216 206 186;
+  --ink: 19 33 28;
+  --ink-2: 66 82 75;
+  --ink-3: 118 130 122;
+  --sar: 255 107 44;
+  --sar-dark: 220 80 20;
+  --sar-light: 255 200 170;
+  --forest: 47 125 87;
+  --forest-light: 207 232 216;
+  color-scheme: light;
+}
+.theme-dark {
+  --paper: 14 24 21;
+  --paper-2: 22 36 31;
+  --paper-3: 33 50 43;
+  --card: 19 31 27;
+  --rule: 41 59 52;
+  --ink: 238 234 222;
+  --ink-2: 178 190 182;
+  --ink-3: 122 138 130;
+  --sar: 255 117 56;
+  --sar-dark: 255 143 92;
+  --sar-light: 92 44 22;
+  --forest: 88 196 140;
+  --forest-light: 24 58 42;
+  color-scheme: dark;
+}
 
 html,
 body,
@@ -22,62 +52,83 @@ body,
 }
 body {
   @apply bg-paper font-sans text-ink antialiased;
-  font-feature-settings: 'tnum' 0;
 }
 a {
   @apply text-sar-dark underline decoration-1 underline-offset-2 hover:text-sar;
 }
 ::selection {
-  @apply bg-sar-light text-ink;
+  @apply bg-raincoat text-ink-900;
+}
+:focus-visible {
+  outline: 2px solid rgb(var(--sar));
+  outline-offset: 2px;
 }
 
 @layer components {
-  /* buttons: rectangular, ruled, no gradients */
+  /* buttons: chunky, softly rounded, with a pressed-key shadow (they sit next to low-poly models) */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded border border-rule bg-paper px-3 py-1.5 text-sm font-medium text-ink no-underline transition-colors hover:border-ink-3 hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-rule bg-card px-3.5 py-1.5 text-sm font-semibold text-ink no-underline shadow-key transition hover:-translate-y-px hover:border-ink-3 hover:text-ink active:translate-y-0 disabled:pointer-events-none disabled:opacity-40;
   }
   .btn-primary {
     @apply border-sar-dark bg-sar text-white hover:border-sar-dark hover:bg-sar-dark hover:text-white;
   }
+  .theme-dark .btn-primary {
+    @apply border-sar text-ink-950 hover:bg-sar hover:text-ink-950 hover:brightness-110;
+  }
   .btn-on {
-    @apply border-ink bg-ink text-paper hover:bg-ink-800 hover:text-paper;
+    @apply border-ink bg-ink text-paper hover:bg-ink hover:text-paper;
+  }
+  .btn-ghost {
+    @apply border-white/25 bg-white/10 text-white shadow-none backdrop-blur hover:border-white/50 hover:bg-white/20 hover:text-white;
   }
   .btn-sm {
-    @apply px-2 py-1 text-xs;
+    @apply rounded-sm px-2.5 py-1 text-xs;
+  }
+  .btn-lg {
+    @apply rounded-lg px-5 py-3 text-base;
   }
   .field {
-    @apply w-full rounded border border-rule bg-white px-2 py-1 text-sm text-ink outline-none focus:border-ink-2;
+    @apply w-full rounded-sm border border-rule bg-card px-2 py-1 text-sm text-ink outline-none focus:border-sar;
   }
   .eyebrow {
-    @apply font-display text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-3;
+    @apply font-mono text-[11.5px] font-medium uppercase tracking-[0.14em] text-ink-3;
   }
   .num {
     @apply font-mono tabular-nums;
   }
-  /* planner side panels: solid paper, ruled */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-rule bg-card px-2.5 py-0.5 text-xs font-semibold text-ink-2;
+  }
+  .glass {
+    @apply border border-white/15 bg-ink-900/55 text-white shadow-float backdrop-blur-xl;
+  }
+  /* planner side panels */
   .sheet {
     @apply border-rule bg-paper text-ink;
   }
   .prose-site p {
-    @apply mb-4 font-serif text-[17px] leading-[1.65] text-ink;
+    @apply mb-4 text-[17px] leading-[1.7] text-ink-2;
   }
   .prose-site h2 {
-    @apply mb-3 mt-12 font-display text-3xl font-bold text-ink;
+    @apply mb-3 mt-14 font-display text-[34px] font-bold leading-tight tracking-tight text-ink;
   }
   .prose-site h3 {
-    @apply mb-2 mt-8 text-lg font-semibold text-ink;
+    @apply mb-2 mt-8 font-display text-xl font-semibold text-ink;
   }
   .prose-site ul {
-    @apply mb-4 list-disc space-y-1.5 pl-6 font-serif text-[17px] leading-[1.6];
+    @apply mb-4 list-disc space-y-1.5 pl-6 text-[17px] leading-[1.65] text-ink-2 marker:text-sar;
   }
   .prose-site ol {
-    @apply mb-4 list-decimal space-y-1.5 pl-6 font-serif text-[17px] leading-[1.6];
+    @apply mb-4 list-decimal space-y-1.5 pl-6 text-[17px] leading-[1.65] text-ink-2 marker:font-mono marker:text-sm marker:text-sar-dark;
+  }
+  .prose-site strong {
+    @apply font-semibold text-ink;
   }
   .prose-site code {
-    @apply rounded-sm bg-paper-2 px-1 font-mono text-[0.9em];
+    @apply rounded-sm bg-paper-2 px-1 font-mono text-[0.88em];
   }
   .prose-site pre {
-    @apply mb-4 overflow-x-auto rounded border border-rule bg-ink-900 p-3 font-mono text-[13px] leading-relaxed text-paper;
+    @apply mb-4 overflow-x-auto rounded-lg border border-rule bg-ink-900 p-4 font-mono text-[13px] leading-relaxed text-paper;
   }
   .prose-site table {
     @apply mb-6 w-full border-collapse text-sm;
@@ -93,15 +144,24 @@ a {
 /* leaflet controls in the site palette */
 .leaflet-container {
   font-family: Barlow, system-ui, sans-serif;
-  background: #e1d9c6;
+  background: rgb(var(--paper-3));
 }
 .leaflet-bar a {
-  color: #1e2420 !important;
+  color: #13211c !important;
 }
 .leaflet-control-attribution {
   font-size: 10px;
 }
 
 input[type='range'] {
-  accent-color: #d4521c;
+  accent-color: rgb(var(--sar));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

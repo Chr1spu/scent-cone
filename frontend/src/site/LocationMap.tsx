@@ -22,7 +22,7 @@ function squareBounds(p: LatLon, size: number): L.LatLngBoundsExpression {
 
 const pinIcon = L.divIcon({
   className: '',
-  html: '<div style="width:22px;height:22px;border-radius:50%;background:#d4521c;border:3px solid #fff;box-shadow:0 0 0 1.5px #1e2420"></div>',
+  html: '<div style="width:22px;height:22px;border-radius:50%;background:#ff6b2c;border:3px solid #fff;box-shadow:0 0 0 1.5px #13211c"></div>',
   iconSize: [22, 22],
   iconAnchor: [11, 11],
 });
@@ -84,8 +84,8 @@ export function LocationMap({ point, onPick, flyKey }: { point: LatLon | null; o
     }
     const ll: L.LatLngExpression = [point.lat, point.lon];
     if (!layers.current) {
-      const overview = L.rectangle(squareBounds(point, OVERVIEW_M), { color: '#1e2420', weight: 1.5, dashArray: '6 5', fill: false, interactive: false }).addTo(m);
-      const detail = L.rectangle(squareBounds(point, DETAIL_M), { color: '#d4521c', weight: 2.5, fillColor: '#d4521c', fillOpacity: 0.06, interactive: false }).addTo(m);
+      const overview = L.rectangle(squareBounds(point, OVERVIEW_M), { color: '#13211c', weight: 1.5, dashArray: '6 5', fill: false, interactive: false }).addTo(m);
+      const detail = L.rectangle(squareBounds(point, DETAIL_M), { color: '#ff6b2c', weight: 2.5, fillColor: '#ff6b2c', fillOpacity: 0.06, interactive: false }).addTo(m);
       const marker = L.marker(ll, { icon: pinIcon, draggable: true, keyboard: true, title: 'Last known point' }).addTo(m);
       marker.on('dragend', () => {
         const p = marker.getLatLng();

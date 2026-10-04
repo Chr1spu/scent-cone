@@ -44,14 +44,14 @@ export function TimeBar() {
   const model = heat && Math.abs(heat.t - time) < 1e-6 ? heat.relStrength : null;
   const label = model !== null ? (model > 0.8 ? 'Good' : model > 0.55 ? 'Fair' : 'Poor') : info.q.label;
   const detail = model !== null ? `${Math.round(model * 100)}% of neutral` : info.q.reason;
-  const tone = label === 'Good' ? 'text-forest' : label === 'Fair' ? 'text-[#9a6a00]' : 'text-sar-dark';
+  const tone = label === 'Good' ? 'text-forest' : label === 'Fair' ? 'text-amber' : 'text-sar-dark';
   const ticks: number[] = [];
   for (let h = t0; h <= t1; h++) ticks.push(h);
   const missing = bundle.config.missingAt;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-rule bg-paper px-3 py-2">
       <button
-        className="btn btn-primary !h-9 !w-9 !p-0"
+        className="btn btn-primary !h-10 !w-10 !rounded-full !p-0"
         aria-label={playing ? 'Pause' : 'Play'}
         onClick={() => {
           if (!playing && time >= t1) setTime(t0);
@@ -60,7 +60,7 @@ export function TimeBar() {
       >
         {playing ? <Icon.Pause /> : <Icon.Play />}
       </button>
-      <div className="num w-[64px] text-2xl font-medium leading-none">{fmtTime(time)}</div>
+      <div className="num w-[68px] text-2xl font-medium leading-none text-ink">{fmtTime(time)}</div>
       <div className="relative min-w-[200px] flex-1">
         <input type="range" min={t0} max={t1} step={TIME.stepMin / 60} value={time} aria-label="Time of day" onChange={(e) => setTime(Number(e.target.value))} className="w-full" />
         <div className="pointer-events-none relative h-3.5 text-[10px] text-ink-3">
@@ -70,7 +70,7 @@ export function TimeBar() {
             </span>
           ))}
           {missing > t0 && missing < t1 && (
-            <span className="absolute top-0 hidden -translate-x-1/2 whitespace-nowrap pl-6 text-[10px] font-semibold text-[#c2185b] sm:inline" style={{ left: `${((missing - t0) / (t1 - t0)) * 100}%` }}>
+            <span className="absolute top-0 hidden -translate-x-1/2 whitespace-nowrap pl-6 text-[10px] font-semibold text-[#ff4fa3] sm:inline" style={{ left: `${((missing - t0) / (t1 - t0)) * 100}%` }}>
               ▲ missing
             </span>
           )}

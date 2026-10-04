@@ -100,7 +100,7 @@ export function Planner({ query }: { query: URLSearchParams }) {
   );
   const ready = status === 'ready' && !!bundle;
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-paper">
+    <div className="theme-dark flex h-full flex-col overflow-hidden bg-paper text-ink">
       <PlannerBar />
       <div className="relative flex min-h-0 flex-1">
         {!mobile && (
@@ -110,7 +110,7 @@ export function Planner({ query }: { query: URLSearchParams }) {
         )}
         <div className="relative min-w-0 flex-1 bg-ink-950" style={{ cursor: tool !== 'none' ? 'crosshair' : undefined }}>
           <Canvas camera={{ position: [0, 4000, 4500], fov: 45, near: 5, far: 80000 }} gl={{ antialias: true, powerPreference: 'high-performance' }} dpr={[1, 2]}>
-            <color attach="background" args={['#0d110f']} />
+            <color attach="background" args={['#08110e']} />
             {bundle && <SceneRoot key={bundle.config.areaId + bundle.mode} bundle={bundle} />}
           </Canvas>
           <BusyIndicator />

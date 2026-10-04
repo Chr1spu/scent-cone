@@ -12,12 +12,12 @@ This is a hackathon build. Every model is a tunable heuristic that is *plausible
 
 | Page | What it is |
 | --- | --- |
-| `/` | Home: what Scentline does, with screenshots from the demo |
+| `/` | Home: a scroll-driven 3D story on a low-poly diorama (the search from 16:00 to dusk: wind, scent draining downhill, team deployment, alert back-trace), then the engine and missions |
 | `/new` | **Plan a search**: pick the last known point on a topographic map (place search, coordinates, your location, or click), the time window (now, or a date and start hour), the subject and the number of teams |
 | `/planner` | The planner. `?demo` loads the bundled Catskills scenario; `?lat=&lon=&now=1&profile=&teams=` (or `&date=&start=`) loads a live area |
 | `/how-it-works` | The method, every parameter, diagrams and limitations |
 | `/guide` | Demo walkthrough, controls, keyboard, running the server |
-| `/about` | Purpose, disclaimer, data sources and credits |
+| `/about` | The project: an interactive 3D "meet the team" stage (the rescue dog's real animation clips), the stack, disclaimer, data sources and credits |
 
 When the home server is running (`scripts/start-server.ps1`), the public site uses it automatically for real areas; otherwise it runs the offline demo. You can also run `docker compose up` locally and enter `http://localhost:8000` as the server on **Plan a search** (the address is saved in your browser).
 
@@ -144,5 +144,18 @@ Step-by-step free hosting: [docs/HOSTING.md](docs/HOSTING.md) (website on Vercel
 * **OpenStreetMap** contributors (ODbL), via the Overpass API
 * **Open-Meteo** weather API
 * Lost-person distance medians after R. Koester, *Lost Person Behavior*
+* **3D models**: Synty Studios POLYGON packs (Dog, Adventure, Kids), used under the Synty licence. Converted to glTF by `frontend/scripts/synty/` (Blender 5 for meshes and posing, three.js FBXLoader for the dog's ASCII animation clips). The source packs are not in this repository.
+
+### Rebuilding the 3D models
+
+`frontend/public/models/` holds the converted models: `kit.glb` (every prop and posed character for the landing diorama), `dog.glb` + `dog_clips.json` (skinned rescue dog and its clips), and single-mesh `tree_*.glb`, `shrub.glb`, `tent.glb`, `handler.glb`, `child_marker.glb` for the planner. To rebuild them from your own Synty packs:
+
+```bash
+cd frontend/scripts/synty
+python index.py <pack>.unitypackage                       # GUID -> asset path index
+python extract.py <pack>.unitypackage <src>/<adv|kids|dog> <asset names...>
+blender -b --factory-startup -P build.py -- <src> <out>   # GLBs
+node dog_clips.mjs <src>/dog <out>/dog_clips.json         # run from frontend/ (needs three)
+```
 
 **Not for operational use.** Scent physics here are simplified heuristics meant to support discussion, not replace trained K9 handlers' judgement.

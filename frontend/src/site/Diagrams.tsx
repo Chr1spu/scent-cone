@@ -80,7 +80,7 @@ export function IdeaDiagram() {
           ),
         },
       ].map((p) => (
-        <div key={p.title} className="rounded border border-rule bg-white/60">
+        <div key={p.title} className="rounded border border-rule bg-card/60">
           <svg viewBox="0 0 250 200" className="block w-full border-b border-rule">
             {p.art}
           </svg>
