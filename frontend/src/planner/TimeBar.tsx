@@ -64,6 +64,34 @@ export function TimeBar() {
   const nowIn = nowH !== null && nowH >= t0 && nowH <= t1 ? nowH : null;
   const pos = (h: number) => `${((h - t0) / (t1 - t0)) * 100}%`;
   const tz = bundle.config.timezone;
+  // keep marker labels inside the bar at the ends of the window
+  const anchor = (h: number) => {
+    const f = (h - t0) / (t1 - t0);
+    return f < 0.06 ? '' : f > 0.94 ? '-translate-x-full' : '-translate-x-1/2';
+  };
+  const showMissing = missing >= t0 && missing <= t1;
+  // a "now" within ~40 min of the missing time shares one label
+  const together = showMissing && nowIn !== null && Math.abs(nowIn - missing) < 0.7;
+  const markers: { key: string; at: number; label: string; title: string; cls: string; tick: string; onClick?: () => void }[] = [];
+  if (showMissing)
+    markers.push({
+      key: 'missing',
+      at: missing,
+      label: together ? 'missing · now' : 'missing',
+      title: `Missing since ${fmtTime(missing)}`,
+      cls: 'bg-[#ff4fa3] text-white',
+      tick: 'bg-[#ff4fa3]',
+    });
+  if (nowIn !== null && !together)
+    markers.push({
+      key: 'now',
+      at: nowIn,
+      label: 'now',
+      title: `Now (${fmtTime(nowIn)}): jump to the current time`,
+      cls: 'bg-forest text-ink-950',
+      tick: 'bg-forest',
+      onClick: () => setTime(Math.floor(nowIn * 4) / 4),
+    });
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-rule bg-paper px-3 py-2">
       <button
@@ -76,37 +104,39 @@ export function TimeBar() {
       >
         {playing ? <Icon.Pause /> : <Icon.Play />}
       </button>
-      <div className="num w-[68px] text-2xl font-medium leading-none text-ink">{fmtTime(time)}</div>
+      <div className="w-[92px] shrink-0 leading-none" title={`Forecast window ${fmtTime(t0)}–${fmtTime(t1)}, local time${tz ? ` (${tz})` : ''}`}>
+        <div className="num text-2xl font-medium text-ink">{fmtTime(time)}</div>
+        <div className="mt-1 truncate text-[10px] text-ink-3">local time{tz ? ` · ${tz.split('/').pop()!.replace(/_/g, ' ')}` : ''}</div>
+      </div>
       <div className="relative min-w-[200px] flex-1">
-        <div className="pointer-events-none mb-0.5 flex justify-between text-[10px] text-ink-3">
-          <span>
-            Forecast window {fmtTime(t0)}–{fmtTime(t1)} · local time{tz ? ` (${tz.replace(/_/g, ' ')})` : ''}
-          </span>
-          <span className="hidden sm:inline">Drag to see conditions and scent at any hour</span>
+        {/* marker row: labels sit above the track so they never collide with the hour numbers */}
+        <div className="relative h-4">
+          {markers.map((m) => (
+            <button
+              key={m.key}
+              className={`absolute top-0 whitespace-nowrap rounded-sm px-1 text-[9px] font-semibold uppercase leading-[13px] ${anchor(m.at)} ${m.cls} ${m.onClick ? '' : 'pointer-events-none'}`}
+              style={{ left: pos(m.at) }}
+              title={m.title}
+              aria-label={m.title}
+              onClick={m.onClick}
+              tabIndex={m.onClick ? 0 : -1}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
-        {nowIn !== null && (
-          <button
-            className="absolute top-3 z-10 h-[22px] w-[2px] -translate-x-1/2 bg-forest"
-            style={{ left: pos(nowIn) }}
-            title={`Now (${fmtTime(nowIn)}): jump to the current time`}
-            aria-label="Jump to the current time"
-            onClick={() => setTime(Math.floor(nowIn * 4) / 4)}
-          >
-            <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm bg-forest px-1 text-[9px] font-semibold uppercase leading-[12px] text-ink-950">now</span>
-          </button>
-        )}
-        <input type="range" min={t0} max={t1} step={TIME.stepMin / 60} value={time} aria-label="Time of day" onChange={(e) => setTime(Number(e.target.value))} className="w-full" />
+        <div className="relative">
+          {markers.map((m) => (
+            <span key={m.key} className={`pointer-events-none absolute -top-0.5 z-10 h-[calc(100%+4px)] w-[2px] -translate-x-1/2 ${m.tick}`} style={{ left: pos(m.at) }} />
+          ))}
+          <input type="range" min={t0} max={t1} step={TIME.stepMin / 60} value={time} aria-label="Time of day" onChange={(e) => setTime(Number(e.target.value))} className="relative block w-full" />
+        </div>
         <div className="pointer-events-none relative h-3.5 text-[10px] text-ink-3">
           {ticks.map((h) => (
-            <span key={h} className={`num absolute -translate-x-1/2 ${h % 24 === 0 && h > 0 ? 'font-semibold text-ink' : ''}`} style={{ left: `${((h - t0) / (t1 - t0)) * 100}%` }} title={h >= 24 ? 'next day' : undefined}>
+            <span key={h} className={`num absolute -translate-x-1/2 ${h % 24 === 0 && h > 0 ? 'font-semibold text-ink' : ''}`} style={{ left: pos(h) }} title={h >= 24 ? 'next day' : undefined}>
               {h % 24}
             </span>
           ))}
-          {missing > t0 && missing < t1 && (
-            <span className="absolute top-0 hidden -translate-x-1/2 whitespace-nowrap pl-6 text-[10px] font-semibold text-[#ff4fa3] sm:inline" style={{ left: `${((missing - t0) / (t1 - t0)) * 100}%` }}>
-              ▲ missing
-            </span>
-          )}
         </div>
       </div>
       {/* fixed-width readouts: their text changes while dragging, the slider must not resize */}
