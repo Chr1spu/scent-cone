@@ -7,8 +7,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { floatGeometry, gltfLoader } from './useModel';
 
 const BASE = `${import.meta.env.BASE_URL}models/`;
 
@@ -25,7 +25,7 @@ async function fetchGlb(name: string) {
   if (!r.ok) return null;
   const buf = await r.arrayBuffer();
   if (new TextDecoder().decode(new Uint8Array(buf, 0, 4)) !== 'glTF') return null;
-  return new GLTFLoader().parseAsync(buf, BASE);
+  return gltfLoader().parseAsync(buf, BASE);
 }
 
 /** Shared tweak so every Synty atlas reads as flat, matte, crisp colour swatches. */
@@ -56,7 +56,7 @@ export function loadKit(): Promise<Kit | null> {
       gltf.scene.traverse((o) => {
         const m = o as THREE.Mesh;
         if (!m.isMesh) return;
-        const geometry = m.geometry.clone().applyMatrix4(m.matrixWorld);
+        const geometry = floatGeometry(m.geometry).applyMatrix4(m.matrixWorld);
         geometry.computeBoundingBox();
         const size = geometry.boundingBox!.getSize(new THREE.Vector3());
         kit.set(m.name, { geometry, material: matte(Array.isArray(m.material) ? m.material[0] : m.material), size });

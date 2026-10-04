@@ -146,6 +146,8 @@ export interface LiveRequest {
   startHour?: number;
   /** use the area's current local date and hour (real-time forecast run) */
   now?: boolean;
+  /** with `now`: the person has been missing this many hours, so the window starts earlier */
+  back?: number;
   /** focus segment centre (lat, lon) */
   detailCenter?: [number, number] | null;
 }
@@ -182,7 +184,9 @@ export async function loadLive(onProgress: Progress = () => {}, req: LiveRequest
   if (req.now) {
     const now = await fetchJson<{ date: string; hour: number }>(`${apiBase()}/api/areas/${area.areaId}/now`);
     date = now.date;
-    startHour = now.hour;
+    // start when the person went missing (up to 8 h back, not before midnight); the window
+    // then runs 8 h from there, so it covers the hours already gone and the next few
+    startHour = Math.max(0, now.hour - Math.max(0, Math.min(8, Math.round(req.back ?? 0))));
   }
   // hours count from the start date's midnight, so a window may run past 23:00
   startHour = Math.max(0, Math.min(startHour, 23));

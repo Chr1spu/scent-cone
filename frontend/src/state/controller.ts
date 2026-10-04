@@ -47,6 +47,13 @@ async function withBusy<T>(label: string, fn: () => Promise<T>): Promise<T | nul
   }
 }
 
+/** The real current time as decimal hours since the area's start-date midnight (area local time). */
+export function nowHourIn(c: { date: string; utcOffsetSeconds: number }): number | null {
+  const [y, m, d] = c.date.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return (Date.now() + c.utcOffsetSeconds * 1000 - Date.UTC(y, m - 1, d)) / 3600e3;
+}
+
 // ---------------------------------------------------------------- boot / loading
 
 export interface BootOptions {
@@ -125,7 +132,10 @@ async function applyBundle(b: AreaBundle) {
     profile: c.profile,
     teams: c.teams,
     lkp,
-    time: c.missingAt ?? 16,
+    time: (() => {
+      const n = nowHourIn(c);
+      return n !== null && n >= c.startHour && n <= c.endHour ? Math.floor(n * 4) / 4 : c.missingAt ?? 16;
+    })(),
     deployments: [],
     alerts: [],
     searched: [],

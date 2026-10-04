@@ -1,5 +1,6 @@
-import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Canvas } from '@react-three/fiber';
+import { PerformanceMonitor } from '@react-three/drei';
 import * as THREE from 'three';
 import { Link } from '../router';
 import { MISSIONS, visibleMissions } from '../config/missions';
@@ -18,6 +19,46 @@ function useReducedMotion() {
     return () => m.removeEventListener('change', on);
   }, []);
   return r;
+}
+
+function hasWebGL(): boolean {
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch {
+    return false;
+  }
+}
+
+/** Phones, small screens and modest machines start in low quality (no shadows, fewer particles). */
+function startsLow(): boolean {
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  return (
+    window.matchMedia?.('(pointer: coarse)').matches ||
+    window.innerWidth < 768 ||
+    (nav.hardwareConcurrency ?? 8) <= 4 ||
+    (nav.deviceMemory ?? 8) <= 4
+  );
+}
+
+/** If the 3D scene throws (lost context, driver bug), show the static fallback instead of a blank page. */
+class SceneBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/** Static stand-in for the diorama: a sky gradient and a still of the island. */
+function StaticScene() {
+  return (
+    <div className="absolute inset-0 bg-gradient-to-b from-[#6fb7dc] via-[#dff0ea] to-[#dff0ea]">
+      <img src={img('diorama.jpg')} alt="" className="absolute inset-0 h-full w-full object-cover opacity-90" />
+    </div>
+  );
 }
 
 /** One chapter card over the 3D scene. */
@@ -115,10 +156,17 @@ const ENGINE = [
 
 export function Home() {
   const reduced = useReducedMotion();
-  const [ready, setReady] = useState(false);
+  const [webgl] = useState(hasWebGL);
+  const [low, setLow] = useState(startsLow);
+  const [ready, setReady] = useState(!webgl);
   const [inStory, setInStory] = useState(true);
   const storyEl = useRef<HTMLDivElement>(null);
   const onReady = useCallback(() => setReady(true), []);
+  // never leave the loading veil up: reveal after 8 s whatever happens
+  useEffect(() => {
+    const id = setTimeout(() => setReady(true), 8000);
+    return () => clearTimeout(id);
+  }, []);
   const last = CHAPTERS.length - 1;
 
   useEffect(() => {
@@ -151,20 +199,28 @@ export function Home() {
 
       {/* the 3D diorama, fixed behind the story */}
       <div className="fixed inset-0 z-0" aria-hidden>
-        <Canvas
-          shadows
-          dpr={[1, 1.75]}
-          frameloop={inStory ? 'always' : 'never'}
-          camera={{ fov: 38, near: 1, far: 2000, position: [150, 96, 168] }}
-          gl={{ antialias: true, powerPreference: 'high-performance', toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-          onCreated={({ gl }) => {
-            gl.shadowMap.type = THREE.PCFSoftShadowMap;
-          }}
-        >
-          <Suspense fallback={null}>
-            <Diorama onReady={onReady} reduced={reduced} />
-          </Suspense>
-        </Canvas>
+        {webgl ? (
+          <SceneBoundary fallback={<StaticScene />}>
+            <Canvas
+              shadows={!low}
+              dpr={low ? [1, 1.25] : [1, 1.75]}
+              frameloop={inStory ? 'always' : 'never'}
+              camera={{ fov: 38, near: 1, far: 2000, position: [150, 96, 168] }}
+              gl={{ antialias: !low, powerPreference: 'high-performance', toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
+              onCreated={({ gl }) => {
+                gl.shadowMap.type = THREE.PCFSoftShadowMap;
+              }}
+            >
+              {/* drop to low quality if the frame rate sags */}
+              <PerformanceMonitor onDecline={() => setLow(true)} flipflops={1} />
+              <Suspense fallback={null}>
+                <Diorama onReady={onReady} reduced={reduced} low={low} />
+              </Suspense>
+            </Canvas>
+          </SceneBoundary>
+        ) : (
+          <StaticScene />
+        )}
       </div>
 
       {/* loading veil */}

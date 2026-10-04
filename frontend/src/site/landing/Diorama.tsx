@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import { KitMesh, useDog, useKit, type DogClip, type Kit } from '../../scene/assets';
+import { KitMesh, loadKit, useDog, useKit, type DogClip, type Kit } from '../../scene/assets';
 import { BASE_Y, CAMP, HIDE, R, buildIsland, downhill, duskAt, height, scatter, smoothstep, valleyX, windFromGrad } from './island';
 import { ALERT_TEAM, BACKTRACE, CH, CHAPTERS, KID_PATH, TEAMS, hourAt, story, type TeamSpot } from './story';
 
@@ -104,7 +104,7 @@ function Sky() {
   );
 }
 
-function Lights() {
+function Lights({ low }: { low: boolean }) {
   const sun = useRef<THREE.DirectionalLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
   const { scene } = useThree();
@@ -137,7 +137,7 @@ function Lights() {
       <hemisphereLight ref={hemi} args={['#bfe3f2', '#3d4a2c', 1]} />
       <directionalLight
         ref={sun}
-        castShadow
+        castShadow={!low}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-camera-left={-150}
@@ -531,8 +531,8 @@ const POINT_FRAG = `
 uniform vec3 uColor; uniform float uOpacity; varying float vA;
 void main(){ float d = length(gl_PointCoord - 0.5); float a = (1.0 - smoothstep(0.0, 0.5, d)) * vA * uOpacity; if (a < 0.01) discard; gl_FragColor = vec4(uColor * a, a); }`;
 
-function WindStreaks({ reduced }: { reduced: boolean }) {
-  const N = 650; // streaks
+function WindStreaks({ reduced, low }: { reduced: boolean; low: boolean }) {
+  const N = low ? 300 : 650; // streaks
   const K = 7; // points per streak (a comet tail)
   const { gl } = useThree();
   const st = useMemo(() => {
@@ -611,8 +611,8 @@ function WindStreaks({ reduced }: { reduced: boolean }) {
   return <points geometry={st.g} material={mat} frustumCulled={false} />;
 }
 
-function ScentPlume({ reduced }: { reduced: boolean }) {
-  const N = 2600;
+function ScentPlume({ reduced, low }: { reduced: boolean; low: boolean }) {
+  const N = low ? 1200 : 2600;
   const { gl } = useThree();
   const st = useMemo(() => {
     const pos = new Float32Array(N * 3);
@@ -824,15 +824,20 @@ function BackTrace() {
 
 // ------------------------------------------------------------ root
 
-export function Diorama({ onReady, reduced }: { onReady?: () => void; reduced: boolean }) {
+export function Diorama({ onReady, reduced, low }: { onReady?: () => void; reduced: boolean; low: boolean }) {
   const kit = useKit();
+  // reveal the page once the models have loaded, or failed (the island still draws without them)
   useEffect(() => {
-    if (kit) onReady?.();
-  }, [kit, onReady]);
+    let alive = true;
+    loadKit().finally(() => alive && onReady?.());
+    return () => {
+      alive = false;
+    };
+  }, [onReady]);
   return (
     <>
       <Sky />
-      <Lights />
+      <Lights low={low} />
       <CameraRig reduced={reduced} />
       <Island />
       {/* the stream gets a soft glint so it reads as water */}
@@ -849,8 +854,8 @@ export function Diorama({ onReady, reduced }: { onReady?: () => void; reduced: b
           ))}
         </>
       )}
-      <WindStreaks reduced={reduced} />
-      <ScentPlume reduced={reduced} />
+      <WindStreaks key={`w${low}`} reduced={reduced} low={low} />
+      <ScentPlume key={`s${low}`} reduced={reduced} low={low} />
       <BackTrace />
       {/* the underside, so the island never shows a hole from low angles */}
       <mesh position={[0, BASE_Y, 0]} rotation={[Math.PI / 2, 0, 0]}>

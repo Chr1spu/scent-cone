@@ -122,7 +122,7 @@ export function About() {
           <div className="mt-6 flex flex-wrap gap-2">
             <span className="chip">48-hour hackathon build</span>
             <span className="chip">Runs offline</span>
-            <span className="chip">Open source</span>
+            <span className="chip">Real terrain and weather</span>
           </div>
         </div>
         <MeetTheTeam />
@@ -190,8 +190,8 @@ export function About() {
 
         <h2>Source code</h2>
         <p>
-          Everything, including the model parameters, the backend and the script that builds the demo data, is at{' '}
-          <a href="https://github.com/Chr1spu/scentline">github.com/Chr1spu/scentline</a>.
+          The code (model parameters, backend, and the scripts that build the demo data and convert the 3D models) is in a private repository. Every model parameter is listed on{' '}
+          <Link to="/how-it-works">How it works</Link>.
         </p>
       </article>
     </SitePage>

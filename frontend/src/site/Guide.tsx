@@ -18,6 +18,7 @@ const CONTROLS: [string, string][] = [
   ['Release scent', 'Starts the visible scent particles.'],
   ['Heatmap', 'Scent of the last hour and the hotspots. Recomputed when the time changes (about 2 s).'],
   ['Teams, Deploy', 'Number of teams (1 to 6) and the deployment itself.'],
+  ['Time bar', 'An 8-hour forecast window in the area’s local time, starting when the person went missing (▲). Dragging it changes wind, sun, temperature and scent to that hour; it is a planning clock and does not follow the real clock. For searches running today, a green NOW marker shows the current time: click it to jump there.'],
   ['Add alert', 'Click where a dog alerted, at the time on the time bar.'],
   ['Searched', 'Mark an area a team covered without an alert: a circle (choose the radius) or a polygon (click corners, then Finish), over a 30 to 120 minute window ending at the time bar.'],
   ['On-site wind', 'Enter the wind a team measured (direction it comes from, speed). It replaces the forecast for that hour in the fallback model.'],
@@ -112,7 +113,7 @@ export function Guide() {
         <Figure src={img('new-search.jpg')} alt="The Plan a search page with a point chosen on the map" caption="Choosing the last known point. The dashed square is the 12 km modelled area; the orange square is the 3 km focus." />
 
         <h2 id="server">Running the server</h2>
-        <p>This public site has no server behind it, so it can only show the demo by itself. To plan real areas, run the server on your own computer with Docker:</p>
+        <p>This public site has no server behind it, so it can only show the demo by itself. To plan real areas, run the server on your own computer with Docker (this needs access to the private repository):</p>
         <pre>{`git clone https://github.com/Chr1spu/scentline.git
 cd scentline
 docker compose up --build`}</pre>

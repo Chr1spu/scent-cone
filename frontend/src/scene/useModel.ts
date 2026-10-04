@@ -2,6 +2,28 @@ import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+
+/** A GLTF loader that reads meshopt-compressed files (all models in public/models are). */
+export function gltfLoader(): GLTFLoader {
+  return new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+}
+
+/**
+ * Copy of a geometry with every attribute as plain Float32 (meshopt stores quantized integers,
+ * which would clamp if a transform were baked into them).
+ */
+export function floatGeometry(src: THREE.BufferGeometry): THREE.BufferGeometry {
+  const g = src.clone();
+  for (const [name, a] of Object.entries(g.attributes)) {
+    const attr = a as THREE.BufferAttribute;
+    if (attr.array instanceof Float32Array && !attr.normalized) continue;
+    const out = new Float32Array(attr.count * attr.itemSize);
+    for (let i = 0; i < attr.count; i++) for (let k = 0; k < attr.itemSize; k++) out[i * attr.itemSize + k] = attr.getComponent(i, k);
+    g.setAttribute(name, new THREE.BufferAttribute(out, attr.itemSize));
+  }
+  return g;
+}
 
 export type ModelName =
   | 'dog.glb'
@@ -44,7 +66,7 @@ export function loadModel(name: ModelName): Promise<THREE.Group | null> {
         const buf = await r.arrayBuffer();
         const magic = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(4, buf.byteLength)));
         if (magic !== 'glTF') return null;
-        const gltf = await new GLTFLoader().parseAsync(buf, `${import.meta.env.BASE_URL}models/`);
+        const gltf = await gltfLoader().parseAsync(buf, `${import.meta.env.BASE_URL}models/`);
         const scene = gltf.scene;
         // normalise: real-world height, base at y = 0
         const box = new THREE.Box3().setFromObject(scene);
@@ -102,7 +124,7 @@ export function firstMesh(g: THREE.Group | null): { geometry: THREE.BufferGeomet
   if (!found) return null;
   const m = found as THREE.Mesh;
   m.updateWorldMatrix(true, false);
-  const geo = m.geometry.clone().applyMatrix4(m.matrixWorld);
+  const geo = floatGeometry(m.geometry).applyMatrix4(m.matrixWorld);
   const mat = Array.isArray(m.material) ? m.material[0] : m.material;
   return { geometry: geo, material: mat };
 }

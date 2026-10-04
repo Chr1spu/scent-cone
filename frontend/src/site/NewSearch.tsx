@@ -74,6 +74,7 @@ export function NewSearch() {
   const [now, setNow] = useState(true);
   const [date, setDate] = useState(todayLocal());
   const [start, setStart] = useState(14);
+  const [back, setBack] = useState(0);
   const [mission, setMissionId] = useState<MissionId>(() => {
     const m = new URLSearchParams(location.search).get('mission');
     return isMission(m) ? m : 'wilderness';
@@ -138,7 +139,7 @@ export function NewSearch() {
   };
 
   const plannerUrl = point
-    ? `/planner?lat=${point.lat.toFixed(5)}&lon=${point.lon.toFixed(5)}${now ? '&now=1' : `&date=${date}&start=${start}`}&mission=${mission}${ms.profiles ? `&profile=${profile}` : ''}&teams=${teams}`
+    ? `/planner?lat=${point.lat.toFixed(5)}&lon=${point.lon.toFixed(5)}${now ? `&now=1${back ? `&back=${back}` : ''}` : `&date=${date}&start=${start}`}&mission=${mission}${ms.profiles ? `&profile=${profile}` : ''}&teams=${teams}`
     : null;
   const ready = !!plannerUrl && server === 'ok';
 
@@ -231,8 +232,22 @@ export function NewSearch() {
           <Step n={2} title="Time window">
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" name="when" checked={now} onChange={() => setNow(true)} className="accent-sar" />
-              Starting now (current forecast, 8 hours)
+              Today, from the current forecast
             </label>
+            {now && (
+              <label className="ml-6 mt-2 block text-xs text-ink-2">
+                Missing since
+                <select className="field mt-0.5" value={back} onChange={(e) => setBack(Number(e.target.value))}>
+                  <option value={0}>Just now (window starts this hour)</option>
+                  {[1, 2, 3, 4, 5, 6].map((h) => (
+                    <option key={h} value={h}>
+                      {h} hour{h > 1 ? 's' : ''} ago
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-[11px] leading-snug text-ink-3">The time bar covers 8 hours from when they went missing; a marker shows the current time.</span>
+              </label>
+            )}
             <label className="mt-1.5 flex items-center gap-2 text-sm">
               <input type="radio" name="when" checked={!now} onChange={() => setNow(false)} className="accent-sar" />
               A specific day

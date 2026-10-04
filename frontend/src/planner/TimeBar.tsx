@@ -1,13 +1,25 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TIME } from '../config/modelParams';
 import { envAt, scentQuality } from '../models/env';
 import { uvToMet } from '../models/wind';
-import { fmtTime, setTime } from '../state/controller';
+import { fmtTime, nowHourIn, setTime } from '../state/controller';
 import { useStore } from '../state/store';
 import { Icon } from '../ui/icons';
 
 const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 const compass = (deg: number) => COMPASS[Math.round(deg / 22.5) % 16];
+
+/** The real current time in the area (decimal hours from its start date), refreshed every 30 s. */
+function useNowHour(c: { date: string; utcOffsetSeconds: number } | undefined) {
+  const [now, setNow] = useState<number | null>(() => (c ? nowHourIn(c) : null));
+  useEffect(() => {
+    if (!c) return;
+    setNow(nowHourIn(c));
+    const id = setInterval(() => setNow(nowHourIn(c)), 30e3);
+    return () => clearInterval(id);
+  }, [c]);
+  return now;
+}
 
 /** Docked time bar: play, the clock, conditions, and the model's scent rating. */
 export function TimeBar() {
@@ -17,6 +29,7 @@ export function TimeBar() {
   const activeWind = useStore((s) => s.activeWind);
   const heat = useStore((s) => s.heat);
   const set = useStore((s) => s.set);
+  const nowH = useNowHour(bundle?.config);
   const info = useMemo(() => {
     if (!bundle) return null;
     const c = bundle.config;
@@ -48,6 +61,9 @@ export function TimeBar() {
   const ticks: number[] = [];
   for (let h = t0; h <= t1; h++) ticks.push(h);
   const missing = bundle.config.missingAt;
+  const nowIn = nowH !== null && nowH >= t0 && nowH <= t1 ? nowH : null;
+  const pos = (h: number) => `${((h - t0) / (t1 - t0)) * 100}%`;
+  const tz = bundle.config.timezone;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-rule bg-paper px-3 py-2">
       <button
@@ -62,6 +78,23 @@ export function TimeBar() {
       </button>
       <div className="num w-[68px] text-2xl font-medium leading-none text-ink">{fmtTime(time)}</div>
       <div className="relative min-w-[200px] flex-1">
+        <div className="pointer-events-none mb-0.5 flex justify-between text-[10px] text-ink-3">
+          <span>
+            Forecast window {fmtTime(t0)}–{fmtTime(t1)} · local time{tz ? ` (${tz.replace(/_/g, ' ')})` : ''}
+          </span>
+          <span className="hidden sm:inline">Drag to see conditions and scent at any hour</span>
+        </div>
+        {nowIn !== null && (
+          <button
+            className="absolute top-3 z-10 h-[22px] w-[2px] -translate-x-1/2 bg-forest"
+            style={{ left: pos(nowIn) }}
+            title={`Now (${fmtTime(nowIn)}): jump to the current time`}
+            aria-label="Jump to the current time"
+            onClick={() => setTime(Math.floor(nowIn * 4) / 4)}
+          >
+            <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm bg-forest px-1 text-[9px] font-semibold uppercase leading-[12px] text-ink-950">now</span>
+          </button>
+        )}
         <input type="range" min={t0} max={t1} step={TIME.stepMin / 60} value={time} aria-label="Time of day" onChange={(e) => setTime(Number(e.target.value))} className="w-full" />
         <div className="pointer-events-none relative h-3.5 text-[10px] text-ink-3">
           {ticks.map((h) => (

@@ -115,11 +115,6 @@ export function SiteFooter() {
             Wind: USFS WindNinja, NOAA HRRR, Open-Meteo. Terrain: USGS 3DEP, Copernicus. Land cover: NLCD, ESA WorldCover. Trails and streams: © OpenStreetMap contributors. 3D models: Synty
             POLYGON packs.
           </p>
-          <p className="mt-3">
-            <a href="https://github.com/Chr1spu/scentline" className="text-amber no-underline hover:text-white">
-              Source code on GitHub →
-            </a>
-          </p>
         </div>
       </div>
     </footer>

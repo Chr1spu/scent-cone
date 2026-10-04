@@ -286,11 +286,10 @@ export function Method() {
             <li>Distance statistics for children 7–12 and for people with dementia in wilderness are placeholders.</li>
             <li>WindNinja started from one area-wide value per hour cannot see local weather such as a thunderstorm outflow.</li>
             <li>Scent is modelled in 2D at one height. Real plumes meander, lift and pool in three dimensions.</li>
-            <li>A modelled window stays within one calendar day (start hour plus 8 hours).</li>
+            <li>A modelled window covers 8 hours from its start hour (it may run past midnight).</li>
           </ul>
           <p>
-            Source code and all parameters: <a href="https://github.com/Chr1spu/scentline">github.com/Chr1spu/scentline</a>. Data sources and credits are on the{' '}
-            <Link to="/about">About</Link> page.
+            Every parameter above lives in one config file. Data sources and credits are on the <Link to="/about">Project</Link> page.
           </p>
         </article>
       </div>

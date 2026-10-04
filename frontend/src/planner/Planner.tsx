@@ -25,6 +25,7 @@ export function bootOptionsFrom(q: URLSearchParams): BootOptions {
       lat,
       lon,
       now: q.get('now') === '1',
+      back: q.has('back') ? Number(q.get('back')) : undefined,
       date: q.get('date') ?? undefined,
       startHour: q.has('start') ? Number(q.get('start')) : undefined,
       detailCenter: null,

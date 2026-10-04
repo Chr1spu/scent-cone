@@ -14,7 +14,7 @@ This is a hackathon build. Every model is a tunable heuristic that is *plausible
 | --- | --- |
 | `/` | Home: a scroll-driven 3D story on a low-poly diorama (the search from 16:00 to dusk: wind, scent draining downhill, team deployment, alert back-trace), then the engine and missions |
 | `/new` | **Plan a search**: pick the last known point on a topographic map (place search, coordinates, your location, or click), the time window (now, or a date and start hour), the subject and the number of teams |
-| `/planner` | The planner. `?demo` loads the bundled Catskills scenario; `?lat=&lon=&now=1&profile=&teams=` (or `&date=&start=`) loads a live area |
+| `/planner` | The planner. `?demo` loads the bundled Catskills scenario; `?lat=&lon=&now=1&profile=&teams=` (or `&date=&start=`) loads a live area; with `now=1`, `&back=N` starts the window N hours ago ("missing since") |
 | `/how-it-works` | The method, every parameter, diagrams and limitations |
 | `/guide` | Demo walkthrough, controls, keyboard, running the server |
 | `/about` | The project: an interactive 3D "meet the team" stage (the rescue dog's real animation clips), the stack, disclaimer, data sources and credits |
@@ -156,6 +156,9 @@ python index.py <pack>.unitypackage                       # GUID -> asset path i
 python extract.py <pack>.unitypackage <src>/<adv|kids|dog|police> <asset names...>
 blender -b --factory-startup -P build.py -- <src> <out>   # GLBs
 node dog_clips.mjs <src>/dog <out>/dog_clips.json         # run from frontend/ (needs three)
+npx @gltf-transform/cli meshopt <out>/kit.glb public/models/kit.glb   # compress (repeat per GLB)
 ```
+
+The GLBs are meshopt-compressed (about a third of their raw size); the loaders register three.js's `MeshoptDecoder`.
 
 **Not for operational use.** Scent physics here are simplified heuristics meant to support discussion, not replace trained K9 handlers' judgement.
