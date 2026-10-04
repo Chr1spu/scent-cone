@@ -144,7 +144,7 @@ Step-by-step free hosting: [docs/HOSTING.md](docs/HOSTING.md) (website on Vercel
 * **OpenStreetMap** contributors (ODbL), via the Overpass API
 * **Open-Meteo** weather API
 * Lost-person distance medians after R. Koester, *Lost Person Behavior*
-* **3D models**: Synty Studios POLYGON packs (Dog, Adventure, Kids), used under the Synty licence. Converted to glTF by `frontend/scripts/synty/` (Blender 5 for meshes and posing, three.js FBXLoader for the dog's ASCII animation clips). The source packs are not in this repository.
+* **3D models**: Synty Studios POLYGON packs (Dog, Police Station, Adventure, Kids), used under the Synty licence. Converted to glTF by `frontend/scripts/synty/` (Blender 5 for meshes and posing, three.js FBXLoader for the dog's ASCII animation clips). The source packs are not in this repository.
 
 ### Rebuilding the 3D models
 
@@ -153,7 +153,7 @@ Step-by-step free hosting: [docs/HOSTING.md](docs/HOSTING.md) (website on Vercel
 ```bash
 cd frontend/scripts/synty
 python index.py <pack>.unitypackage                       # GUID -> asset path index
-python extract.py <pack>.unitypackage <src>/<adv|kids|dog> <asset names...>
+python extract.py <pack>.unitypackage <src>/<adv|kids|dog|police> <asset names...>
 blender -b --factory-startup -P build.py -- <src> <out>   # GLBs
 node dog_clips.mjs <src>/dog <out>/dog_clips.json         # run from frontend/ (needs three)
 ```

@@ -18,7 +18,7 @@ const SOURCES: [string, string, string][] = [
   ['Place search', 'OpenStreetMap Nominatim', 'https://nominatim.org'],
   ['Base maps', 'OpenTopoMap (CC-BY-SA), USGS The National Map, OpenStreetMap', 'https://opentopomap.org'],
   ['Distance statistics', 'R. Koester, Lost Person Behavior', 'https://www.dbs-sar.com'],
-  ['3D models', 'Synty Studios POLYGON Dog, Adventure and Kids packs (licensed)', 'https://syntystore.com'],
+  ['3D models', 'Synty Studios POLYGON Dog, Police Station, Adventure and Kids packs (licensed)', 'https://syntystore.com'],
 ];
 
 const CLIPS: { id: DogClip; label: string; note: string }[] = [
@@ -104,7 +104,7 @@ const STACK = [
   { k: 'Plan', v: 'Greedy team placement over scent-weighted probability; back-tracing for alerts and Bayesian updates for empty sectors.' },
   { k: 'Front end', v: 'React, three.js / React Three Fiber, zustand, Tailwind. Works fully offline with the bundled demo.' },
   { k: 'Back end', v: 'FastAPI, rasterio, py3dep, Open-Meteo; per-area caching, job queue and rate limits.' },
-  { k: 'Art', v: 'Synty POLYGON Dog, Adventure and Kids packs, converted to glTF with Blender and three.js scripts; the dog keeps its real animation clips.' },
+  { k: 'Art', v: 'Synty POLYGON Dog, Police Station, Adventure and Kids packs, converted to glTF with Blender and three.js scripts; the dog keeps its real animation clips.' },
 ];
 
 export function About() {

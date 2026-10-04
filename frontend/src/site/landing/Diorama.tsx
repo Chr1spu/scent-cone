@@ -703,6 +703,8 @@ function ScentPlume({ reduced }: { reduced: boolean }) {
 // ------------------------------------------------------------ dog teams
 
 const TEAM_COLORS = ['#ff6b2c', '#ffb547', '#7fd1c7'];
+/** each team's K9 officer (Synty Police Station): cap, female officer, campaign hat */
+const HANDLERS = ['handler', 'handler_f', 'handler_r'];
 
 function Arrow({ color }: { color: string }) {
   const geo = useMemo(() => {
@@ -771,10 +773,10 @@ function Team({ kit, t, reduced }: { kit: Kit; t: TeamSpot; reduced: boolean }) 
     <group>
       <group ref={dogG}>{dog && <primitive object={dog} scale={CHAR * 0.85} />}</group>
       <group ref={hand} scale={CHAR}>
-        <KitMesh kit={kit} name="handler" />
+        <KitMesh kit={kit} name={HANDLERS[t.n - 1]} />
       </group>
       <group ref={handPoint} scale={CHAR} visible={false}>
-        <KitMesh kit={kit} name="handler_point" />
+        <KitMesh kit={kit} name={`${HANDLERS[t.n - 1]}_point`} />
       </group>
       <group ref={mark} position={atY(t.x, t.z, 0.3)}>
         <mesh rotation={[-Math.PI / 2, 0, 0]}>

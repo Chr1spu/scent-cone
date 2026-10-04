@@ -2,7 +2,7 @@
    blender -b --factory-startup -P build.py -- <src dir> <out dir>
 Outputs (all metres, +Y up, facing +X, base at y = 0):
   dog.glb              skinned German Shepherd + rescue vest, NLA animations (idle, sniff, walk, run, bark, sit, wag)
-  handler.glb          static, orange jumpsuit handler
+  handler.glb          static, police K9 handler
   child_marker.glb     static, kid in a yellow raincoat (standing)
   tree_conifer.glb, tree_broadleaf.glb, shrub.glb, tent.glb   single-mesh props for the planner
   kit.glb              every prop + posed characters as named top-level nodes for the landing scene
@@ -168,8 +168,12 @@ def export(path, objs=None, anims=False):
 
 # ---------- poses (bone-local degrees; Z swings arms/legs sideways, Y swings them forward) ----------
 ARMS_DOWN = {'Shoulder_L': [0, 0, -70], 'Shoulder_R': [0, 0, -70]}
-HANDLER = dict(fbx=f'{A}/Generic_Characters.fbx', tex=f'{A}/Generic_01_A.png', keep=['SM_Gen_Chr_Jumpsuit_Male_01'],
-               attach=[(f'{A}/SM_Gen_Chr_Attach_Beanie_01.fbx', 'Head')])
+P = f'{SRC}/police'
+POLICE = dict(fbx=f'{P}/Characters.fbx', tex=f'{P}/PolygonPoliceStation_Texture_01_A.png')
+# handlers: police K9 officers (Synty POLYGON Police Station)
+HANDLER = dict(**POLICE, keep=['SM_Chr_Officer_Male_01'], attach=[(f'{P}/SM_Chr_Attach_Hat_01.fbx', 'Head')])
+HANDLER_F = dict(**POLICE, keep=['SM_Chr_Officer_Female_01'], attach=[(f'{P}/SM_Chr_Attach_Hair_05.fbx', 'Head')])
+HANDLER_R = dict(**POLICE, keep=['SM_Chr_Officer_Male_01'], attach=[(f'{P}/SM_Chr_Attach_Hat_05.fbx', 'Head')])
 KID = dict(fbx=f'{K}/Characters_Kids.fbx', tex=f'{K}/PolygonKids_Texture_01_A.png',
            keep=['SM_Chr_Kid_Raincoat_01', 'SM_Chr_Eyes_Male_01', 'SM_Chr_Eyebrows_01'])
 KID_STAND = {'Shoulder_L': [0, 0, -68], 'Shoulder_R': [0, 0, -68]}
@@ -254,5 +258,9 @@ items += [
     character(pose=KID_WALK, name='kid_walk', **KID),
     character(pose=HANDLER_POINT, name='handler_point', **HANDLER),
     character(pose=ARMS_DOWN, name='handler', **HANDLER),
+    character(pose=HANDLER_POINT, name='handler_f_point', **HANDLER_F),
+    character(pose=ARMS_DOWN, name='handler_f', **HANDLER_F),
+    character(pose=HANDLER_POINT, name='handler_r_point', **HANDLER_R),
+    character(pose=ARMS_DOWN, name='handler_r', **HANDLER_R),
 ]
 export(f'{OUT}/kit.glb', items)
