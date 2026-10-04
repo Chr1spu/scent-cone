@@ -20,7 +20,7 @@ const spaFallback = {
 const backend = process.env.VITE_BACKEND_URL ?? 'http://localhost:8000';
 
 export default defineConfig({
-  // GitHub Pages serves from /<repo>/; set BASE_PATH=/scent-cone/ for that build
+  // GitHub Pages serves from /<repo>/; set BASE_PATH=/scentline/ for that build
   base: process.env.BASE_PATH ?? '/',
   plugins: [react(), spaFallback],
   server: {

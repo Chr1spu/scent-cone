@@ -177,9 +177,9 @@ export const CORE_MISSIONS: MissionId[] = ['wilderness', 'training', 'cadaver'];
 export function visibleMissions(): MissionId[] {
   try {
     const q = new URLSearchParams(location.search).get('experimental');
-    if (q === '1') localStorage.setItem('scentcone.experimental', '1');
-    if (q === '0') localStorage.removeItem('scentcone.experimental');
-    if (localStorage.getItem('scentcone.experimental') === '1') return MISSION_ORDER;
+    if (q === '1') localStorage.setItem('scentline.experimental', '1');
+    if (q === '0') localStorage.removeItem('scentline.experimental');
+    if (localStorage.getItem('scentline.experimental') === '1') return MISSION_ORDER;
   } catch {
     /* no storage */
   }

@@ -6,7 +6,7 @@ import type { Feature2D } from '../models/probability';
 import type { WindField, WindHour } from '../models/wind';
 import type { AreaBundle, AreaConfig, GeoFeature, Progress } from './types';
 
-/** static assets live under Vite's base path (e.g. /scent-cone/ on GitHub Pages) */
+/** static assets live under Vite's base path (e.g. /scentline/ on GitHub Pages) */
 const DEMO = `${import.meta.env.BASE_URL}demo`;
 
 async function fetchBin(url: string, expectedBytes: number, init?: RequestInit): Promise<{ buf: ArrayBuffer; headers: Headers }> {

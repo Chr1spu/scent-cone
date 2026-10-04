@@ -39,7 +39,7 @@ export function Home() {
             <p className="eyebrow">Air-scent dog deployment planner</p>
             <h1 className="mt-3 font-display text-5xl font-bold leading-[0.95] tracking-tight text-ink md:text-6xl">Send the dogs where the scent is.</h1>
             <p className="mt-5 max-w-md font-serif text-lg leading-relaxed text-ink-2">
-              Scent Cone models how wind carries a missing person&apos;s scent across real terrain, then suggests where air-scent dog teams should start and at what hour.
+              Scentline models how wind carries a missing person&apos;s scent across real terrain, then suggests where air-scent dog teams should start and at what hour.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link to="/new" className="btn btn-primary px-5 py-2.5 text-base">
@@ -49,7 +49,7 @@ export function Home() {
                 Open the demo
               </Link>
             </div>
-            <p className="mt-4 text-sm text-ink-3">The demo runs entirely in your browser. Planning your own area needs the Scent Cone server.</p>
+            <p className="mt-4 text-sm text-ink-3">The demo runs entirely in your browser. Planning your own area needs the Scentline server.</p>
           </div>
           <Figure
             src={img('hero.jpg')}
@@ -64,7 +64,7 @@ export function Home() {
           <p className="eyebrow">The idea</p>
           <h2 className="mt-2 font-display text-4xl font-bold text-ink">A dog finds the scent, not the person.</h2>
           <p className="mt-4 font-serif text-lg leading-relaxed text-ink-2">
-            Search planners usually map where someone is likely to be. An air-scent dog works the air downwind of that spot, and the air moves with the terrain and the time of day. Scent Cone turns the first map into the second.
+            Search planners usually map where someone is likely to be. An air-scent dog works the air downwind of that spot, and the air moves with the terrain and the time of day. Scentline turns the first map into the second.
           </p>
         </div>
         <div className="mt-10">
@@ -133,7 +133,7 @@ export function Home() {
           </div>
         </div>
         <p className="mt-8 max-w-3xl text-sm leading-relaxed text-ink-3">
-          Scent Cone is a research prototype. Its scent physics are simplified, tunable rules of thumb, documented on <Link to="/how-it-works">How it works</Link>. Use it to support a
+          Scentline is a research prototype. Its scent physics are simplified, tunable rules of thumb, documented on <Link to="/how-it-works">How it works</Link>. Use it to support a
           discussion with experienced K9 handlers, not to replace one.
         </p>
       </section>

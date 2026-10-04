@@ -2,11 +2,12 @@
  * Where the backend lives. Order: a URL saved in this browser (so the public site can use a
  * server you run yourself), then the build-time VITE_API_BASE, then same-origin '/api'.
  */
-const KEY = 'scentcone.server';
+const KEY = 'scentline.server';
 
 export function apiBase(): string {
   try {
-    const saved = localStorage.getItem(KEY);
+    // fall back to the address saved before the rename to Scentline
+    const saved = localStorage.getItem(KEY) ?? localStorage.getItem('scentcone.server');
     if (saved?.trim()) return saved.trim().replace(/\/+$/, '');
   } catch {
     /* storage unavailable */

@@ -64,7 +64,7 @@ export function LoadingScreen() {
       <div className="w-[380px] max-w-[calc(100vw-32px)]">
         <div className="flex items-center gap-2 text-ink">
           <Logo size={30} />
-          <span className="font-display text-2xl font-bold">Scent Cone</span>
+          <span className="font-display text-2xl font-bold">Scentline</span>
         </div>
         {status === 'error' ? (
           <div className="mt-6">

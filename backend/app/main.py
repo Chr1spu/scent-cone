@@ -1,4 +1,4 @@
-"""Scent Cone backend: terrain, land cover, features, weather and wind for a search area."""
+"""Scentline backend: terrain, land cover, features, weather and wind for a search area."""
 from __future__ import annotations
 
 import logging
@@ -19,7 +19,7 @@ from .weather import fetch_weather, fetch_weather_span, local_now, resolve_timez
 
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="Scent Cone API", version="0.1.0")
+app = FastAPI(title="Scentline API", version="0.1.0")
 origins = os.environ.get("CORS_ORIGINS", "*").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"],
                    expose_headers=["X-Grid-Meta", "X-Wind-Source", "X-Data-Info"],

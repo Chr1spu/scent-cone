@@ -39,7 +39,7 @@ export function Guide() {
     <SitePage>
       <article className="prose-site mx-auto max-w-4xl px-4 py-12 md:px-6">
         <p className="eyebrow !mb-1">Guide</p>
-        <h1 className="font-display text-5xl font-bold leading-none text-ink">Using Scent Cone</h1>
+        <h1 className="font-display text-5xl font-bold leading-none text-ink">Using Scentline</h1>
         <p className="mt-5 max-w-prose !text-lg">
           The fastest way to learn it is the demo. <Link to="/planner?demo">Open it</Link> and press the keys 1 to 7 in order, or follow along below.
         </p>
@@ -113,8 +113,8 @@ export function Guide() {
 
         <h2 id="server">Running the server</h2>
         <p>This public site has no server behind it, so it can only show the demo by itself. To plan real areas, run the server on your own computer with Docker:</p>
-        <pre>{`git clone https://github.com/Chr1spu/scent-cone.git
-cd scent-cone
+        <pre>{`git clone https://github.com/Chr1spu/scentline.git
+cd scentline
 docker compose up --build`}</pre>
         <p>
           The first build compiles WindNinja and takes a few minutes. Then, on <Link to="/new">Plan a search</Link>, enter <code>http://localhost:8000</code> as the server address and press

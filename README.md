@@ -1,8 +1,8 @@
-# Scent Cone
+# Scentline
 
 The repository is private. To put the website and server online for free (Vercel + Hugging Face Spaces), follow [docs/HOSTING.md](docs/HOSTING.md).
 
-**Where and when to deploy air-scent dogs.** Scent Cone shows a search area as interactive 3D terrain, computes terrain-adjusted wind with the US Forest Service's **WindNinja**, simulates how human scent drifts from where a missing person might be, and recommends dog-team deployment points. When dogs alert, or search a sector and find nothing, it updates where the person probably is.
+**Where and when to deploy air-scent dogs.** Scentline shows a search area as interactive 3D terrain, computes terrain-adjusted wind with the US Forest Service's **WindNinja**, simulates how human scent drifts from where a missing person might be, and recommends dog-team deployment points. When dogs alert, or search a sector and find nothing, it updates where the person probably is.
 
 > Core idea: convert a map of **where the person might be** into a map of **where a dog could detect them**.
 
@@ -12,7 +12,7 @@ This is a hackathon build. Every model is a tunable heuristic that is *plausible
 
 | Page | What it is |
 | --- | --- |
-| `/` | Home: what Scent Cone does, with screenshots from the demo |
+| `/` | Home: what Scentline does, with screenshots from the demo |
 | `/new` | **Plan a search**: pick the last known point on a topographic map (place search, coordinates, your location, or click), the time window (now, or a date and start hour), the subject and the number of teams |
 | `/planner` | The planner. `?demo` loads the bundled Catskills scenario; `?lat=&lon=&now=1&profile=&teams=` (or `&date=&start=`) loads a live area |
 | `/how-it-works` | The method, every parameter, diagrams and limitations |

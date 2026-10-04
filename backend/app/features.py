@@ -86,7 +86,7 @@ def fetch_features(area: Area) -> dict:
     for url in OVERPASS_URLS:
         try:
             r = requests.post(url, data={"data": q}, timeout=90,
-                              headers={"User-Agent": "scent-cone/0.1 (SAR planning demo)"})
+                              headers={"User-Agent": "scentline/0.1 (SAR planning demo)"})
             r.raise_for_status()
             gj = osm_to_geojson(r.json(), area.overview["crs"])
             break

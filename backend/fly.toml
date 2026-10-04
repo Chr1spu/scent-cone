@@ -1,5 +1,5 @@
 # Fly.io: `fly launch --copy-config --no-deploy` then `fly deploy` from backend/.
-app = "scent-cone-api"
+app = "scentline-api"
 primary_region = "ewr"
 
 [build]

@@ -1,9 +1,9 @@
 # Deploys the server (backend/, Docker + WindNinja) to a Hugging Face Space.
 # One-time setup (see docs/HOSTING.md):
 #   repository secret   HF_TOKEN  = a Hugging Face access token with write permission
-#   repository variable HF_SPACE  = <hf-username>/scent-cone-api
+#   repository variable HF_SPACE  = <hf-username>/scentline-api
 # The Space is created on first run. Hugging Face builds the image (WindNinja compile:
-# ~10 minutes the first time) and serves it at https://<hf-username>-scent-cone-api.hf.space
+# ~10 minutes the first time) and serves it at https://<hf-username>-scentline-api.hf.space
 name: Deploy server to Hugging Face
 on:
   push:
@@ -38,9 +38,9 @@ jobs:
           shutil.copytree("backend", stage, dirs_exist_ok=True,
                           ignore=shutil.ignore_patterns(".venv", "cache", "__pycache__", ".pytest_cache", "*.tif"))
           with open(os.path.join(stage, "README.md"), "w") as f:
-              f.write("---\ntitle: Scent Cone API\nemoji: 🐕\ncolorFrom: yellow\ncolorTo: green\n"
+              f.write("---\ntitle: Scentline API\nemoji: 🐕\ncolorFrom: yellow\ncolorTo: green\n"
                       "sdk: docker\napp_port: 8000\npinned: false\n---\n\n"
-                      "Server for Scent Cone: terrain, land cover, weather and WindNinja wind. "
+                      "Server for Scentline: terrain, land cover, weather and WindNinja wind. "
                       "Health check: `/api/health`.\n")
           api.upload_folder(folder_path=stage, repo_id=space, repo_type="space",
                             commit_message="Deploy from GitHub", delete_patterns=["*"])

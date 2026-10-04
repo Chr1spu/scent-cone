@@ -1,4 +1,4 @@
-"""Land cover reclassified to Scent Cone classes (Uint8):
+"""Land cover reclassified to Scentline classes (Uint8):
 0 unknown, 1 water, 2 open, 3 shrub, 4 forest, 5 developed, 6 wetland.
 US: NLCD (MRLC WCS). Elsewhere / on failure: ESA WorldCover. Last resort: all open (warning).
 """

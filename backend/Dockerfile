@@ -1,4 +1,4 @@
-# Scent Cone backend: FastAPI + WindNinja CLI (mass-conserving solver only).
+# Scentline backend: FastAPI + WindNinja CLI (mass-conserving solver only).
 #
 # WindNinja is built from github.com/firelab/windninja following
 # scripts/build_deps_ubuntu_2404.sh, but without the Qt GUI or OpenFOAM

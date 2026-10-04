@@ -289,7 +289,7 @@ export function Method() {
             <li>A modelled window stays within one calendar day (start hour plus 8 hours).</li>
           </ul>
           <p>
-            Source code and all parameters: <a href="https://github.com/Chr1spu/scent-cone">github.com/Chr1spu/scent-cone</a>. Data sources and credits are on the{' '}
+            Source code and all parameters: <a href="https://github.com/Chr1spu/scentline">github.com/Chr1spu/scentline</a>. Data sources and credits are on the{' '}
             <Link to="/about">About</Link> page.
           </p>
         </article>

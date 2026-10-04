@@ -1,6 +1,6 @@
 /**
  * Minimal client-side router (history API) that respects Vite's base path, so the same
- * build works at / locally and at /scent-cone/ on GitHub Pages (404.html serves the app).
+ * build works at / locally and at /scentline/ on GitHub Pages (404.html serves the app).
  */
 import { useEffect, useState, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 

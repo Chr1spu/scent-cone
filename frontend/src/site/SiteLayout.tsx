@@ -16,7 +16,7 @@ export function SiteHeader() {
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 md:px-6">
         <Link to="/" className="flex items-center gap-2 text-ink no-underline hover:text-ink">
           <Logo size={28} />
-          <span className="font-display text-[22px] font-bold tracking-tight">Scent Cone</span>
+          <span className="font-display text-[22px] font-bold tracking-tight">Scentline</span>
         </Link>
         <nav className="hidden items-center gap-5 md:flex" aria-label="Main">
           {NAV.map((n) => (
@@ -71,7 +71,7 @@ export function SiteFooter() {
         <div>
           <div className="flex items-center gap-2 text-ink">
             <Logo size={22} />
-            <span className="font-display text-lg font-bold">Scent Cone</span>
+            <span className="font-display text-lg font-bold">Scentline</span>
           </div>
           <p className="mt-2 max-w-sm leading-relaxed">
             A planning aid for deploying air-scent dogs. A research prototype: the scent physics are simplified, and it does not replace a K9 handler&apos;s judgement.
@@ -103,7 +103,7 @@ export function SiteFooter() {
             Wind: USFS WindNinja, NOAA HRRR, Open-Meteo. Terrain: USGS 3DEP, Copernicus. Land cover: NLCD, ESA WorldCover. Trails and streams: © OpenStreetMap contributors.
           </p>
           <p className="mt-2">
-            <a href="https://github.com/Chr1spu/scent-cone">Source code on GitHub</a>
+            <a href="https://github.com/Chr1spu/scentline">Source code on GitHub</a>
           </p>
         </div>
       </div>

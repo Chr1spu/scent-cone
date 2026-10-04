@@ -49,9 +49,9 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: backend
-          tags: scent-cone-backend:ci
+          tags: scentline-backend:ci
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - run: docker run --rm scent-cone-backend:ci python -c "from app import windninja; assert windninja.available(), 'WindNinja CLI missing'; print('WindNinja OK, wx model:', windninja.choose_wx_model())"
-      - run: docker run --rm scent-cone-backend:ci pytest -q
+      - run: docker run --rm scentline-backend:ci python -c "from app import windninja; assert windninja.available(), 'WindNinja CLI missing'; print('WindNinja OK, wx model:', windninja.choose_wx_model())"
+      - run: docker run --rm scentline-backend:ci pytest -q

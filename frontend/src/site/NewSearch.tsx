@@ -42,7 +42,7 @@ function ServerBox({ state, windninja, onCheck }: { state: ServerState; windninj
       <p className="mt-1 text-xs text-ink-3">Address: {apiBase() || 'this website'}</p>
       {state === 'down' && (
         <p className="mt-2 text-[13px] leading-snug text-ink-2">
-          Planning a new area needs the Scent Cone server, which downloads terrain and weather and runs WindNinja. Start it with <code className="rounded-sm bg-paper-2 px-1 font-mono text-xs">docker compose up</code> and enter its
+          Planning a new area needs the Scentline server, which downloads terrain and weather and runs WindNinja. Start it with <code className="rounded-sm bg-paper-2 px-1 font-mono text-xs">docker compose up</code> and enter its
           address below (usually <code className="rounded-sm bg-paper-2 px-1 font-mono text-xs">http://localhost:8000</code>). See the <Link to="/guide#server">guide</Link>.
         </p>
       )}

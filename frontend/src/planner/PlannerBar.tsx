@@ -59,9 +59,9 @@ export function PlannerBar() {
   );
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-rule bg-paper px-3">
-      <Link to="/" className="flex items-center gap-1.5 text-ink no-underline hover:text-ink" title="Scent Cone home">
+      <Link to="/" className="flex items-center gap-1.5 text-ink no-underline hover:text-ink" title="Scentline home">
         <Logo size={24} />
-        <span className="hidden font-display text-lg font-bold sm:inline">Scent Cone</span>
+        <span className="hidden font-display text-lg font-bold sm:inline">Scentline</span>
       </Link>
       <div className="h-6 w-px bg-rule" />
       <div className="min-w-0 leading-tight">

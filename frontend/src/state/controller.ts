@@ -74,7 +74,7 @@ export async function boot(opts: BootOptions = {}) {
   if (!opts.live) {
     await loadMode('offline');
   } else if (!health.ok) {
-    set({ status: 'error', errorKind: 'server', error: 'The Scent Cone server is not reachable, so this area cannot be computed.' });
+    set({ status: 'error', errorKind: 'server', error: 'The Scentline server is not reachable, so this area cannot be computed.' });
     return;
   } else {
     await loadMode('live', opts.live);

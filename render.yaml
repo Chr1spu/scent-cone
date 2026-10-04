@@ -1,7 +1,7 @@
 # Render blueprint: backend as a Docker web service (WindNinja inside), frontend as a static site.
 services:
   - type: web
-    name: scent-cone-api
+    name: scentline-api
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
@@ -11,7 +11,7 @@ services:
       - key: CORS_ORIGINS
         value: "*"
   - type: web
-    name: scent-cone
+    name: scentline
     runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
@@ -20,5 +20,5 @@ services:
       - key: VITE_API_BASE
         fromService:
           type: web
-          name: scent-cone-api
+          name: scentline-api
           envVarKey: RENDER_EXTERNAL_URL
