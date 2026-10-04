@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import type { AreaBundle, GridLevel } from '../api/types';
 import { CONTOUR_DETAIL_M, CONTOUR_OVERVIEW_M, VERT_EXAG } from '../config/constants';
-import { localBounds, type Frame } from '../geo/grid';
+import { gridMap, insideGrid, localBounds, type Frame } from '../geo/grid';
 import { sunAt } from '../models/env';
 import { addAlert, addHide, brush, searchClick, setLkp } from '../state/controller';
 import { useStore } from '../state/store';
@@ -48,6 +48,7 @@ function rectOf(level: GridLevel, frame: Frame): THREE.Vector4 {
 export function Terrain({ bundle }: { bundle: AreaBundle }) {
   const { frame, overview, detail } = bundle;
   const detailGeo = useMemo(() => buildGeometry(detail, frame), [detail, frame]);
+  const detailMap = useMemo(() => gridMap(detail.meta, frame), [detail, frame]);
   const overviewGeo = useMemo(() => buildGeometry(overview, frame), [overview, frame]);
   const range = useMemo(() => {
     let lo = Infinity;
@@ -164,13 +165,15 @@ export function Terrain({ bundle }: { bundle: AreaBundle }) {
     }
   });
 
-  const onClick = (e: ThreeEvent<MouseEvent>, level: 'detail' | 'overview') => {
+  const onClick = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 4) return;
     e.stopPropagation();
     const s = useStore.getState();
     const lx = e.point.x;
     const ly = -e.point.z;
-    const inDetail = level === 'detail';
+    // Inside the focus square is decided by position, not by which mesh was hit: the overview
+    // surface under the square is only hidden by its shader, so it can still catch the click.
+    const inDetail = insideGrid(detailMap, lx, ly);
     switch (s.tool) {
       case 'lkp':
         setLkp(lx, ly);
@@ -225,8 +228,8 @@ export function Terrain({ bundle }: { bundle: AreaBundle }) {
 
   return (
     <group>
-      <mesh geometry={overviewGeo} material={overviewMat} onClick={(e) => onClick(e, 'overview')} onPointerMove={onMove} onPointerDown={onDown} onPointerUp={onUp} />
-      <mesh geometry={detailGeo} material={detailMat} onClick={(e) => onClick(e, 'detail')} onPointerMove={onMove} onPointerDown={onDown} onPointerUp={onUp} />
+      <mesh geometry={overviewGeo} material={overviewMat} onClick={onClick} onPointerMove={onMove} onPointerDown={onDown} onPointerUp={onUp} />
+      <mesh geometry={detailGeo} material={detailMat} onClick={onClick} onPointerMove={onMove} onPointerDown={onDown} onPointerUp={onUp} />
     </group>
   );
 }
