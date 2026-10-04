@@ -9,9 +9,20 @@ import type { AreaBundle, AreaConfig, GeoFeature, Progress } from './types';
 /** static assets live under Vite's base path (e.g. /scentline/ on GitHub Pages) */
 const DEMO = `${import.meta.env.BASE_URL}demo`;
 
+/** Error for a failed request; uses the server's own message (busy, rate limit) when it sent one. */
+async function httpError(url: string, r: Response): Promise<Error> {
+  try {
+    const j = (await r.json()) as { detail?: unknown };
+    if (typeof j.detail === 'string') return new Error(j.detail);
+  } catch {
+    // not JSON
+  }
+  return new Error(`${url}: HTTP ${r.status}`);
+}
+
 async function fetchBin(url: string, expectedBytes: number, init?: RequestInit): Promise<{ buf: ArrayBuffer; headers: Headers }> {
   const r = await fetch(url, init);
-  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  if (!r.ok) throw await httpError(url, r);
   const buf = await r.arrayBuffer();
   // dev servers answer unknown paths with index.html; insist on the exact size
   if (buf.byteLength !== expectedBytes) throw new Error(`${url}: expected ${expectedBytes} bytes, got ${buf.byteLength}`);
@@ -20,7 +31,7 @@ async function fetchBin(url: string, expectedBytes: number, init?: RequestInit):
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
-  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  if (!r.ok) throw await httpError(url, r);
   const ct = r.headers.get('content-type') ?? '';
   if (ct.includes('text/html')) throw new Error(`${url}: not found`);
   return (await r.json()) as T;

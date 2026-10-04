@@ -9,5 +9,10 @@ services:
       - ./backend/cache:/app/cache
       - ./backend/data:/app/data
       - ./frontend/public/demo:/demo   # build_demo.py --out /demo
+    # keep the PC usable while the public server runs WindNinja (override in .env)
+    cpus: "${BACKEND_CPUS:-8}"
+    mem_limit: "${BACKEND_MEM:-6g}"
     environment:
       - CORS_ORIGINS=*
+      - WINDNINJA_THREADS=${BACKEND_CPUS:-8}
+      - MAX_RUNNING_JOBS=${MAX_RUNNING_JOBS:-1}

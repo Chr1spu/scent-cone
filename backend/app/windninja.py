@@ -182,7 +182,7 @@ def _run(cfg: Path, cwd: Path) -> None:
 
 def _base_opts(area: Area, dem_path: Path, out_dir: Path, veg: str) -> dict:
     return {
-        "num_threads": max(1, (os.cpu_count() or 2) - 1),
+        "num_threads": config.WINDNINJA_THREADS,
         "elevation_file": str(dem_path),
         "time_zone": area.timezone,
         "output_wind_height": 2.0,

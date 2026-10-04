@@ -1,19 +1,23 @@
 """Scentline backend: terrain, land cover, features, weather and wind for a search area."""
 from __future__ import annotations
 
+import datetime as dt
+import json
 import logging
 import os
+import re
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
-from . import jobs, windninja
+from . import config, jobs, windninja
 from .areas import Area, create_area, load_area
 from .encode import grid_response
 from .features import fetch_features
 from .landcover import fetch_landcover
+from .ratelimit import RateLimit
 from .terrain import fetch_dem
 from .weather import fetch_weather, fetch_weather_span, local_now, resolve_timezone
 
@@ -27,24 +31,58 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], a
                    allow_private_network=True)
 
 
+# per-client limits on the endpoints that download data or start WindNinja
+area_limit = RateLimit(*config.RATE_LIMIT_AREAS)
+wind_limit = RateLimit(*config.RATE_LIMIT_WIND)
+
+_OV_MIN, _OV_MAX = config.OVERVIEW_SIZE_RANGE_M
+_DT_MIN, _DT_MAX = config.DETAIL_SIZE_RANGE_M
+
+
 class AreaRequest(BaseModel):
-    lat: float
-    lon: float
-    overviewSizeM: float | None = None
-    detailSizeM: float | None = None
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    overviewSizeM: float | None = Field(None, ge=_OV_MIN, le=_OV_MAX)
+    detailSizeM: float | None = Field(None, ge=_DT_MIN, le=_DT_MAX)
     detailCenter: tuple[float, float] | None = None  # (lat, lon)
     # IANA zone, or "auto" to look it up from the coordinates
-    timezone: str = "auto"
+    timezone: str = Field("auto", max_length=64)
+
+    @model_validator(mode="after")
+    def _detail_fits(self):
+        ov = self.overviewSizeM or config.OVERVIEW_SIZE_M
+        if (self.detailSizeM or config.DETAIL_SIZE_M) > ov:
+            raise ValueError("detailSizeM must not exceed overviewSizeM")
+        return self
 
 
 class WindRequest(BaseModel):
     date: str
-    startHour: int = 14
-    endHour: int = 22
-    stepHours: int = 1
+    startHour: int = Field(14, ge=0, le=23)
+    endHour: int = Field(22, ge=0, le=config.MAX_HOUR)
+    stepHours: int = Field(1, ge=1, le=6)
+
+
+def _date(date: str) -> str:
+    """YYYY-MM-DD only: dates end up in cache file names."""
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            dt.date.fromisoformat(date)
+            return date
+    except ValueError:
+        pass
+    raise HTTPException(400, "date must be YYYY-MM-DD")
+
+
+def _hour(hour: int) -> int:
+    if not 0 <= hour <= config.MAX_HOUR:
+        raise HTTPException(400, f"hour must be 0-{config.MAX_HOUR}")
+    return hour
 
 
 def _area(area_id: str) -> Area:
+    if not re.fullmatch(r"[0-9a-f]{1,40}", area_id):
+        raise HTTPException(404, f"unknown area {area_id}")
     a = load_area(area_id)
     if a is None:
         raise HTTPException(404, f"unknown area {area_id}")
@@ -62,7 +100,7 @@ def health():
     return {"ok": True, "windninja": windninja.available()}
 
 
-@app.post("/api/areas")
+@app.post("/api/areas", dependencies=[Depends(area_limit.dependency)])
 def post_area(req: AreaRequest):
     kw = {}
     if req.overviewSizeM:
@@ -93,7 +131,6 @@ def get_now(area_id: str):
 def get_terrain(area_id: str, level: str = Query("detail")):
     a = _area(area_id)
     dem, info = fetch_dem(a, _level(level))
-    import json
     return grid_response(dem, a.meta(level), np.float32, {"X-Data-Info": json.dumps(info)})
 
 
@@ -101,7 +138,6 @@ def get_terrain(area_id: str, level: str = Query("detail")):
 def get_landcover(area_id: str, level: str = Query("detail")):
     a = _area(area_id)
     lc, info = fetch_landcover(a, _level(level))
-    import json
     return grid_response(lc, a.meta(level), np.uint8, {"X-Data-Info": json.dumps(info)})
 
 
@@ -113,14 +149,15 @@ def get_features(area_id: str):
 @app.get("/api/areas/{area_id}/weather")
 def get_weather(area_id: str, date: str, days: int = Query(1, ge=1, le=2)):
     """Hourly weather; with days=2 the hours continue past 23 into the next day."""
-    return fetch_weather_span(_area(area_id), date, days)
+    return fetch_weather_span(_area(area_id), _date(date), days)
 
 
-@app.post("/api/areas/{area_id}/wind")
+@app.post("/api/areas/{area_id}/wind", dependencies=[Depends(wind_limit.dependency)])
 def post_wind(area_id: str, req: WindRequest):
     a = _area(area_id)
-    if not (0 <= req.startHour <= 23 and req.startHour <= req.endHour <= req.startHour + 24):
-        raise HTTPException(400, "startHour must be 0-23 and endHour within 24 h after it")
+    _date(req.date)
+    if not req.startHour <= req.endHour <= req.startHour + config.MAX_WIND_SPAN_H:
+        raise HTTPException(400, f"endHour must be within {config.MAX_WIND_SPAN_H} h after startHour")
     hours = list(range(req.startHour, req.endHour + 1, max(req.stepHours, 1)))
 
     def work(job: jobs.Job):
@@ -135,7 +172,11 @@ def post_wind(area_id: str, req: WindRequest):
             job.update(1.0, f"WindNinja failed ({e}); fallback wind ready")
             return {"source": "fallback", "hours": hours, "error": str(e)}
 
-    return {"jobId": jobs.submit(work).id}
+    try:
+        return {"jobId": jobs.submit(work).id}
+    except jobs.QueueFull:
+        raise HTTPException(503, "The server is busy with other wind runs; try again in a few minutes.",
+                            headers={"Retry-After": "120"}) from None
 
 
 @app.get("/api/jobs/{job_id}")
@@ -158,11 +199,11 @@ def _wind_response(a: Area, date: str, hour: int, kind: str):
 
 @app.get("/api/areas/{area_id}/wind")
 def get_wind(area_id: str, date: str, hour: int):
-    a = _area(area_id)
+    a, date, hour = _area(area_id), _date(date), _hour(hour)
     r = _wind_response(a, date, hour, "windninja")
     return r if r is not None else _wind_response(a, date, hour, "fallback")
 
 
 @app.get("/api/areas/{area_id}/wind/fallback")
 def get_wind_fallback(area_id: str, date: str, hour: int):
-    return _wind_response(_area(area_id), date, hour, "fallback")
+    return _wind_response(_area(area_id), _date(date), _hour(hour), "fallback")

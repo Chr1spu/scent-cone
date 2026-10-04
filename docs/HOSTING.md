@@ -48,5 +48,10 @@ The website looks for a server in this order:
 ## Notes and risks
 
 - The tunnel address is public. Anyone who finds it can create areas and run WindNinja jobs on this PC (CPU load and downloads, but no access to your files: the server runs in a container that only mounts `backend/cache`, `backend/data` and `frontend/public/demo`). Stop the server when you are not using it.
+- Limits that keep the PC usable (values in `backend/app/config.py`, container limits in `docker-compose.yml`):
+  - one WindNinja job at a time (`MAX_RUNNING_JOBS`); up to 4 more wait in a queue and see "Server busy", and beyond that the server answers 503;
+  - per visitor IP (from `CF-Connecting-IP`): 20 new areas and 10 wind runs per 10 minutes, then 429 with `Retry-After`;
+  - overview 3–20 km, detail 1–5 km, wind windows of at most 12 hours;
+  - the container gets at most 8 CPUs and 6 GB of memory (`BACKEND_CPUS`, `BACKEND_MEM` in `.env`).
 - Quick tunnels are meant for testing and have no uptime guarantee. For a fixed address, create a free Cloudflare account and a named tunnel, then put its URL in `server.json`.
 - Website setup (one time): on Vercel, **Add New → Project → Import** the repo with **Root Directory** `frontend`. Netlify and Cloudflare Pages also work (`netlify.toml` is included).
