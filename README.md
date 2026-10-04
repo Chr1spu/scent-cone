@@ -1,6 +1,6 @@
 # Scentline
 
-The repository is private. The website is on Vercel and the server runs on a desktop PC behind a Cloudflare tunnel; see [docs/HOSTING.md](docs/HOSTING.md).
+The repository is private. The website is on Vercel and the server runs on a desktop PC behind a Cloudflare tunnel; see [docs/HOSTING.md](docs/HOSTING.md). What to work on next: [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md).
 
 **Where and when to deploy air-scent dogs.** Scentline shows a search area as interactive 3D terrain, computes terrain-adjusted wind with the US Forest Service's **WindNinja**, simulates how human scent drifts from where a missing person might be, and recommends dog-team deployment points. When dogs alert, or search a sector and find nothing, it updates where the person probably is.
 
