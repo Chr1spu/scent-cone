@@ -1,6 +1,6 @@
 # Scentline
 
-The repository is private. To put the website and server online for free (Vercel + Hugging Face Spaces), follow [docs/HOSTING.md](docs/HOSTING.md).
+The repository is private. The website is on Vercel and the server runs on a desktop PC behind a Cloudflare tunnel; see [docs/HOSTING.md](docs/HOSTING.md).
 
 **Where and when to deploy air-scent dogs.** Scentline shows a search area as interactive 3D terrain, computes terrain-adjusted wind with the US Forest Service's **WindNinja**, simulates how human scent drifts from where a missing person might be, and recommends dog-team deployment points. When dogs alert, or search a sector and find nothing, it updates where the person probably is.
 
@@ -19,7 +19,7 @@ This is a hackathon build. Every model is a tunable heuristic that is *plausible
 | `/guide` | Demo walkthrough, controls, keyboard, running the server |
 | `/about` | Purpose, disclaimer, data sources and credits |
 
-The public site has no server, so it runs the demo. To plan real areas from it, run `docker compose up` locally and enter `http://localhost:8000` as the server on **Plan a search** (the address is saved in your browser).
+When the home server is running (`scripts/start-server.ps1`), the public site uses it automatically for real areas; otherwise it runs the offline demo. You can also run `docker compose up` locally and enter `http://localhost:8000` as the server on **Plan a search** (the address is saved in your browser).
 
 ## Demo scenario
 
@@ -121,7 +121,7 @@ backend/    FastAPI + WindNinja CLI (Docker), terrain/landcover/OSM/weather pipe
 
 ## Deploying
 
-Step-by-step free hosting: [docs/HOSTING.md](docs/HOSTING.md) (website on Vercel, server on Hugging Face Spaces, deployed by `.github/workflows/deploy-backend.yml`).
+Step-by-step free hosting: [docs/HOSTING.md](docs/HOSTING.md) (website on Vercel, server on this PC: `scripts/start-server.ps1` / `scripts/stop-server.ps1`). `.github/workflows/deploy-backend.yml` can still push the server to a Hugging Face Space if you have PRO.
 
 
 * **Frontend (static):** the repository is private, and GitHub Pages needs a public repository on the free plan (or GitHub Pro). `.github/workflows/pages.yml` still works if Pages is available: set the repository variable `PAGES_ENABLED=true`. Netlify, Vercel and Cloudflare Pages all deploy from private repositories for free; `netlify.toml` and `frontend/vercel.json` are ready. Set `VITE_API_BASE` to a hosted backend URL to enable live mode.
@@ -130,7 +130,7 @@ Step-by-step free hosting: [docs/HOSTING.md](docs/HOSTING.md) (website on Vercel
 
 ## Known limitations
 
-* The public site runs the offline demo only; live mode needs the backend running somewhere (see Deploying).
+* Live mode on the public site works only while the home server is running (see Deploying); otherwise it runs the offline demo.
 * A modelled window is 8 hours; the WindNinja forecast (HRRR) is only available for roughly the next two days.
 * A new heatmap takes about 0.7 s after the slider moves (it runs in background workers, so the UI stays responsive).
 * Lost-person distances for children 7–12 and dementia in wilderness are placeholders to tune.

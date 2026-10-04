@@ -1,43 +1,52 @@
 # Hosting Scentline for free
 
-Two pieces, both on free tiers, no credit card:
-
-| Piece | Host | Free tier | Notes |
+| Piece | Host | Cost | Notes |
 | --- | --- | --- | --- |
-| Website (`frontend/`) | **Vercel** (Hobby) | free for non-commercial use | Builds from the private GitHub repo on every push. |
-| Server (`backend/`, Docker + WindNinja) | **Hugging Face Spaces** (Docker, CPU basic) | free: 2 vCPU, 16 GB RAM | Sleeps after 48 h without visits and wakes on the next request (up to a minute). The Space itself is public, so the server code is visible there; the GitHub repo stays private. |
+| Website (`frontend/`) | **Vercel** (Hobby) | free | Builds from the private GitHub repo on every push to `main`. |
+| Server (`backend/`, Docker + WindNinja) | **this desktop PC**, reached through a Cloudflare quick tunnel | free | Online only while the PC is on and the tunnel is running. No Cloudflare account needed. |
 
-Do the server first, so you have its address for the website.
+Hugging Face Docker Spaces were the first plan, but free Docker Spaces now require a PRO subscription, so the server runs at home instead.
 
-## 1. Server on Hugging Face (about 5 minutes, then ~10 minutes of building)
+## Start the server
 
-1. Create a free account at <https://huggingface.co/join>.
-2. Create an access token: <https://huggingface.co/settings/tokens> → **Create new token** → type **Write** → name it `scentline-deploy` → copy it.
-3. In a terminal in the project folder, store it as a GitHub secret (it goes straight to GitHub, nobody else sees it):
-   ```bash
-   gh secret set HF_TOKEN            # paste the token when asked
-   gh variable set HF_SPACE --body "YOUR-HF-USERNAME/scentline-api"
-   ```
-4. Start the first deploy (later deploys run automatically when `backend/` changes):
-   ```bash
-   gh workflow run deploy-backend.yml
-   ```
-5. Open `https://huggingface.co/spaces/YOUR-HF-USERNAME/scentline-api`. The first build compiles WindNinja (~10 minutes). When it says **Running**, check
-   `https://YOUR-HF-USERNAME-scentline-api.hf.space/api/health` → `{"ok":true,"windninja":true}`.
+From the project folder in PowerShell:
 
-## 2. Website on Vercel (about 3 minutes)
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-server.ps1
+```
 
-1. Sign up at <https://vercel.com/signup> with **Continue with GitHub**.
-2. **Add New → Project → Import** `scentline` (allow Vercel access to the repository when GitHub asks).
-3. Settings on the import screen:
-   - **Root Directory:** `frontend`
-   - **Framework Preset:** Vite (detected)
-   - **Environment Variables:** `VITE_API_BASE` = `https://YOUR-HF-USERNAME-scentline-api.hf.space`
-4. **Deploy.** Your site is at `https://scentline-….vercel.app` (you can rename it under Settings → Domains). Every push to `main` redeploys it.
+The script:
 
-## Notes
+1. starts Docker Desktop if needed;
+2. runs `docker compose up -d` on port **8010** (the container restarts with Docker after a reboot);
+3. downloads `cloudflared.exe` into `tools/` the first time (official Cloudflare release; `tools/` is gitignored);
+4. opens a quick tunnel and checks `/api/health` through the public `https://….trycloudflare.com` address;
+5. writes that address to `frontend/public/server.json`, commits it and pushes. Vercel redeploys in about a minute, and the website then uses the server automatically.
 
-- Without step 1 the website still works as the offline demo; *Plan a search* will say no server is reachable.
-- Anyone can also point the website at a server they run themselves: `docker compose up`, then enter `http://localhost:8000` as the server address on *Plan a search*.
-- Change the server later without touching the code: edit `VITE_API_BASE` in Vercel and redeploy.
-- Netlify or Cloudflare Pages work the same way for the website (`netlify.toml` is included).
+The tunnel address changes every time the tunnel starts, which is why step 5 republishes it. Use `-NoPublish` to skip the commit, or `-Port 8020` for another port.
+
+## Stop the server
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\stop-server.ps1
+```
+
+This closes the tunnel, stops the container and clears `server.json`, so the website goes back to the offline demo for new areas. `-KeepServer` closes only the tunnel. `-KeepPublished` leaves the address in place.
+
+## After a reboot
+
+The container comes back with Docker Desktop, but the tunnel does not. Run `start-server.ps1` again; it publishes the new address.
+
+## How the website finds the server
+
+The website looks for a server in this order:
+
+1. an address the visitor typed on *Plan a search* (saved in their browser);
+2. `server.json`, published by the start script;
+3. `VITE_API_BASE`, set at build time in Vercel (optional; leave it empty).
+
+## Notes and risks
+
+- The tunnel address is public. Anyone who finds it can create areas and run WindNinja jobs on this PC (CPU load and downloads, but no access to your files: the server runs in a container that only mounts `backend/cache`, `backend/data` and `frontend/public/demo`). Stop the server when you are not using it.
+- Quick tunnels are meant for testing and have no uptime guarantee. For a fixed address, create a free Cloudflare account and a named tunnel, then put its URL in `server.json`.
+- Website setup (one time): on Vercel, **Add New → Project → Import** the repo with **Root Directory** `frontend`. Netlify and Cloudflare Pages also work (`netlify.toml` is included).
