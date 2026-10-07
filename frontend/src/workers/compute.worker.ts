@@ -3,7 +3,8 @@
  * Heavy computation off the main thread: probability, ensembles, hotspots, deployment,
  * alert back-tracing and negative search updates. Holds the search state (prior, likelihood).
  */
-import { ENSEMBLE, HOTSPOTS, PROBABILITY, PROFILES } from '../config/modelParams';
+import { ENSEMBLE, HOTSPOTS, PROBABILITY, PROFILES, TRIANGULATION } from '../config/modelParams';
+import { envAt } from '../models/env';
 import { MISSIONS, type MissionId } from '../config/missions';
 import { aggregateToOverview, areaPrior, habitatPrior, hidesPrior, waterPrior } from '../models/sources';
 import { setTuning } from '../models/tuning';
@@ -23,7 +24,7 @@ import {
   sumInside,
   type StaticLayers,
 } from '../models/probability';
-import { blockIndex, type BlockIndex } from '../models/scent';
+import { blockIndex, meanderFor, type BlockIndex } from '../models/scent';
 import { EnsemblePool, parallelEnsemble, poolSize } from './pool';
 import { searchUpdate, type SearchedSector } from '../models/searchUpdate';
 import { buildTerrainInfo, LC, type TerrainInfo } from '../models/terrainInfo';
@@ -388,7 +389,8 @@ async function deploy(t: number, teams: number, report: (f: number, l: string) =
 function alert(x: number, y: number, t: number, report: (f: number, l: string) => void): AlertResult {
   const s = st();
   report(0.2, 'Back-tracing scent from alert');
-  const zone = backtrace({ ti: s.ti, field: s.wind, t, x, y, seed: Math.round(x * 7 + y * 13 + t * 100) });
+  const { sigmaA } = meanderFor(envAt(s.init.place, s.init.weather, t), TRIANGULATION.dt);
+  const zone = backtrace({ ti: s.ti, field: s.wind, t, x, y, sigmaA, seed: Math.round(x * 7 + y * 13 + t * 100) });
   const L = alertLikelihood(zone);
   for (let i = 0; i < L.length; i++) s.L[i] *= L[i];
   s.outside *= alertLikelihood(new Float32Array(1))[0];

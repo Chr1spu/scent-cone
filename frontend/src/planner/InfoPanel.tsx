@@ -7,6 +7,18 @@ import { useStore } from '../state/store';
 import { MISSIONS } from '../config/missions';
 import { Icon } from '../ui/icons';
 import { briefingText, speakBriefing, stopBriefing, type Voice } from './briefing';
+import { download, toGpx, toKml, type PlanExportInput } from './exportPlan';
+import { localToLatLon, usng } from '../geo/utm';
+
+/** USNG reference of a local point in this area (10 m when short), or null outside UTM grids. */
+function useGrid() {
+  const bundle = useStore((s) => s.bundle);
+  return (x: number, y: number, digits: 4 | 5 = 5) => {
+    if (!bundle) return null;
+    const p = localToLatLon(bundle.detail.meta.crs, bundle.frame, x, y);
+    return p ? usng(p.lat, p.lon, digits) : null;
+  };
+}
 
 type Tab = 'plan' | 'legend' | 'notes';
 
@@ -39,11 +51,12 @@ function Briefing() {
   const time = useStore((s) => s.time);
   const lkp = useStore((s) => s.lkp);
   const area = useStore((s) => s.bundle?.config.name ?? 'this area');
+  const grid = useGrid();
   const [state, setState] = useState<'idle' | 'loading' | 'playing'>('idle');
   const [voice, setVoice] = useState<Voice | null>(null);
   // a new plan (or leaving the tab) stops the old briefing
   useEffect(() => () => stopBriefing(), [deployments]);
-  const text = briefingText({ area, time, lkp, deployments });
+  const text = briefingText({ area, time, lkp, deployments, grid: (x, y) => grid(x, y, 4) });
   const play = async () => {
     if (state !== 'idle') {
       stopBriefing();
@@ -76,9 +89,37 @@ function Briefing() {
   );
 }
 
+/** GPX / KML of the last known point and team starts, for GPS units, CalTopo and Google Earth. */
+function ExportButtons() {
+  const bundle = useStore((s) => s.bundle);
+  const deployments = useStore((s) => s.deployments);
+  const time = useStore((s) => s.time);
+  const lkp = useStore((s) => s.lkp);
+  if (!bundle) return null;
+  const c = bundle.config;
+  const inp: PlanExportInput = { area: c.name, date: c.date, time, crs: bundle.detail.meta.crs, frame: bundle.frame, lkp, lkpLabel: c.lkp.label ?? 'Last known point', deployments };
+  const slug = `scentline-${c.date}-${fmtTime(time).replace(':', '')}`;
+  const save = (kind: 'gpx' | 'kml') => {
+    const text = kind === 'gpx' ? toGpx(inp) : toKml(inp);
+    if (text) download(`${slug}.${kind}`, kind === 'gpx' ? 'application/gpx+xml' : 'application/vnd.google-earth.kml+xml', text);
+  };
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-ink-3">
+      <span>Export for GPS / CalTopo:</span>
+      <button className="btn btn-sm" onClick={() => save('gpx')} title="GPX: GPS units, CalTopo/SARTopo, Gaia">
+        GPX
+      </button>
+      <button className="btn btn-sm" onClick={() => save('kml')} title="KML: Google Earth, CalTopo">
+        KML
+      </button>
+    </div>
+  );
+}
+
 function Plan() {
   const deployments = useStore((s) => s.deployments);
   const time = useStore((s) => s.time);
+  const grid = useGrid();
   if (deployments.length === 0) {
     return (
       <p className="text-[13px] leading-relaxed text-ink-2">
@@ -89,6 +130,7 @@ function Plan() {
   return (
     <div className="space-y-2">
       <Briefing />
+      <ExportButtons />
       <p className="text-xs text-ink-3">Planned for {fmtTime(time)}. Bars: scent score for each hour at that point.</p>
       {deployments.map((d) => {
         const color = COLORS.team[(d.team - 1) % COLORS.team.length];
@@ -103,6 +145,11 @@ function Plan() {
               </span>
               <span className="num text-xs text-ink-2">covers {(d.coveredProb * 100).toFixed(1)}%</span>
             </div>
+            {grid(d.x, d.y) && (
+              <div className="num mt-0.5 select-all text-[12px] text-ink" title="USNG / MGRS grid reference of the start point (1 m)">
+                {grid(d.x, d.y)}
+              </div>
+            )}
             <div className="mt-1 text-ink-2">
               Work toward <span className="num">{dir}°</span> ({compass(dir)}), into a <span className="num">{d.windSpeed.toFixed(1)} m/s</span> wind.
             </div>

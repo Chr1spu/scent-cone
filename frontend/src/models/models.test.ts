@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { HOTSPOTS, PROFILES, SCENT } from '../config/modelParams';
+import { HOTSPOTS, PROFILES, SCENT, TURBULENCE } from '../config/modelParams';
 import { bilinear, cellAt, frameOf, gridMap, sampleLocal, type GridMeta } from '../geo/grid';
 import { decayTau, type Weather } from './env';
 import { deployableCells, detThresholds, detectability, blockMean, greedyDeploy, sourceSums } from './hotspots';
@@ -123,10 +123,15 @@ describe('probability map', () => {
 
 describe('scent particles', () => {
   let saved: typeof SCENT;
+  let savedTurb: typeof TURBULENCE;
   beforeEach(() => {
     saved = { ...SCENT };
+    savedTurb = { ...TURBULENCE };
   });
-  afterEach(() => Object.assign(SCENT, saved));
+  afterEach(() => {
+    Object.assign(SCENT, saved);
+    Object.assign(TURBULENCE, savedTurb);
+  });
 
   function env(ti: TerrainInfo, field: WindField, dt: number): StepEnv {
     const se = makeStepEnv(ti, field, place, weather, 21, dt, IDENTITY_MEMBER); // night: no sun
@@ -136,6 +141,7 @@ describe('scent particles', () => {
   it('advects u·dt at nose height (2 m wind × log-profile factor) with K = 0', () => {
     SCENT.turbK0 = 0;
     SCENT.turbKPerWind = 0;
+    TURBULENCE.scale = 0;
     const ti = flatTerrain();
     const field = uniformField(100, 1.5, -0.5);
     const prob = new Float32Array(100 * 100);
@@ -156,6 +162,7 @@ describe('scent particles', () => {
   it('decays with the configured half-life (τ ln 2)', () => {
     SCENT.turbK0 = 0;
     SCENT.turbKPerWind = 0;
+    TURBULENCE.scale = 0;
     const ti = flatTerrain();
     const field = uniformField(100, 0, 0);
     const prob = new Float32Array(100 * 100);

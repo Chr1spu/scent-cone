@@ -371,3 +371,20 @@ export function sumInside(p: Float32Array, m: GridMap, bounds: { minX: number; m
   }
   return s;
 }
+
+/** Standard normal CDF (Abramowitz-Stegun 7.1.26 erf, |error| < 1.5e-7). */
+function normCdf(z: number): number {
+  const t = 1 / (1 + (0.3275911 * Math.abs(z)) / Math.SQRT2);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-(z * z) / 2);
+  return z >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y);
+}
+
+/**
+ * Share of a profile's distance distribution that lies outside a square of the given half-width
+ * centred on the last known point (approximated by the equal-area circle, radius 2h/√π). The map
+ * is normalised inside the modelled area, so this much is silently left out; worth saying.
+ */
+export function shareBeyond(profile: { medianM: number; spread: number }, halfWidthM: number): number {
+  const r = (2 * halfWidthM) / Math.sqrt(Math.PI);
+  return 1 - normCdf(Math.log(r / profile.medianM) / profile.spread);
+}

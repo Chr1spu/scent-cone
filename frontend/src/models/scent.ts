@@ -2,8 +2,8 @@
  * Scent particle simulation (CLAUDE.md §8.3). Struct-of-arrays, no per-step allocation.
  * Positions are local metres (east, north) relative to the frame centre.
  */
-import { ENSEMBLE, SCENT } from '../config/modelParams';
-import { decayTau, envAt, type Place, type Weather } from './env';
+import { ENSEMBLE, SCENT, TURBULENCE } from '../config/modelParams';
+import { decayTau, envAt, meanderCoef, stabilityClass, type Place, type Weather } from './env';
 import { Rng } from './rng';
 import { sunlitMask, type TerrainInfo } from './terrainInfo';
 import { TUNING } from './tuning';
@@ -34,6 +34,9 @@ export interface Sim {
   strength: Float32Array;
   age: Float32Array;
   source: Uint32Array;
+  /** turbulent (meander) velocity in units of σv, east and north (Ornstein-Uhlenbeck state) */
+  tu: Float32Array;
+  tv: Float32Array;
   sources: Sources;
   ti: TerrainInfo;
   rng: Rng;
@@ -60,6 +63,8 @@ export function createSim(p: SimParams): Sim {
     strength: new Float32Array(p.n),
     age: new Float32Array(p.n),
     source: new Uint32Array(p.n),
+    tu: new Float32Array(p.n),
+    tv: new Float32Array(p.n),
     sources: p.sources ?? buildSources(p.prob),
     ti: p.ti,
     rng: new Rng(p.seed),
@@ -96,6 +101,9 @@ export function emit(sim: Sim, i: number): void {
   sim.strength[i] = 1;
   sim.age[i] = 0;
   sim.source[i] = cell;
+  // start in the stationary state of the meander process
+  sim.tu[i] = sim.rng.normal();
+  sim.tv[i] = sim.rng.normal();
 }
 
 export interface StepEnv {
@@ -109,6 +117,18 @@ export interface StepEnv {
   decaySun: number;
   /** neutral scent conditions (reference runs): no sun effects, base decay */
   neutral: boolean;
+  /** meander strength: σv = sigmaA · (nose-height wind), from the stability class */
+  sigmaA: number;
+  /** Ornstein-Uhlenbeck update for this dt: memory e^(-dt/T_L) and kick √(1 − memory²) */
+  ouMemory: number;
+  ouKick: number;
+}
+
+/** Meander settings for a step of dt seconds in the given conditions. */
+export function meanderFor(env: Parameters<typeof stabilityClass>[0], dt: number): { sigmaA: number; ouMemory: number; ouKick: number } {
+  const sigmaA = meanderCoef(stabilityClass(env), TURBULENCE.briggsA);
+  const ouMemory = Math.exp(-dt / TURBULENCE.lagrangianS);
+  return { sigmaA, ouMemory, ouKick: Math.sqrt(1 - ouMemory * ouMemory) };
 }
 
 /** Per-time environment for stepping; recompute when t changes noticeably. */
@@ -123,11 +143,13 @@ export function makeStepEnv(
   sunlitBuf?: Uint8Array,
   neutral = false,
 ): StepEnv {
+  const env = envAt(place, weather, t);
+  // the neutral reference keeps the same air (transport, turbulence); only scent decay is neutral
+  const meander = meanderFor(env, dt);
   if (neutral) {
     const d = Math.exp(-dt / (SCENT.baseTauS * TUNING.tauScale));
-    return { slot: timeSlot(field, t), member, sunlit: sunlitBuf ?? new Uint8Array(ti.elev.length), sunHigh: false, sunUp: false, decayShade: d, decaySun: d, neutral };
+    return { slot: timeSlot(field, t), member, sunlit: sunlitBuf ?? new Uint8Array(ti.elev.length), sunHigh: false, sunUp: false, decayShade: d, decaySun: d, neutral, ...meander };
   }
-  const env = envAt(place, weather, t);
   const sunlit = sunlitMask(ti, env.sun.dir, sunlitBuf);
   const sunHigh = env.sun.elevation > SCENT.sunHighElev;
   return {
@@ -139,6 +161,7 @@ export function makeStepEnv(
     decayShade: Math.exp(-dt / decayTau(env, false)),
     decaySun: Math.exp(-dt / decayTau(env, sunHigh)),
     neutral,
+    ...meander,
   };
 }
 
@@ -166,7 +189,9 @@ export function step(sim: Sim, field: WindField, se: StepEnv, dt: number, acc?: 
   const { cols, rows, inv, ox, oy } = m;
   const nose = sim.ti.noseFactor;
   const low = sim.ti.localLow;
-  const { x: X, y: Y, strength: S, age: A, source: SRC } = sim;
+  const { x: X, y: Y, strength: S, age: A, source: SRC, tu: TU, tv: TV } = sim;
+  const { ouMemory, ouKick } = se;
+  const meanderOn = TURBULENCE.scale;
   const rng = sim.rng;
   const sunlit = se.sunlit;
   const twoDt = 2 * dt;
@@ -197,8 +222,12 @@ export function step(sim: Sim, field: WindField, se: StepEnv, dt: number, acc?: 
     const damp = speed < SCENT.calmWind && low[cell] ? SCENT.calmDamp : 1;
     const K = SCENT.turbK0 + SCENT.turbKPerWind * speed;
     const sig = Math.sqrt(K * twoDt) * damp;
-    x += u * dt * damp + sig * rng.normal();
-    y += v * dt * damp + sig * rng.normal();
+    // meander: a turbulent velocity that persists ~T_L, scaled to the local wind and stability
+    TU[i] = TU[i] * ouMemory + ouKick * rng.normal();
+    TV[i] = TV[i] * ouMemory + ouKick * rng.normal();
+    const sv = Math.max(se.sigmaA * speed, TURBULENCE.minSigmaV) * meanderOn;
+    x += (u + sv * TU[i]) * dt * damp + sig * rng.normal();
+    y += (v + sv * TV[i]) * dt * damp + sig * rng.normal();
     let s = S[i];
     if (se.neutral) s *= se.decayShade;
     else {

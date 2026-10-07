@@ -5,6 +5,7 @@
  */
 import { apiBase } from '../api/server';
 import type { DeploymentOut } from '../workers/protocol';
+import { spokenGrid } from '../geo/utm';
 
 const POINTS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 /** compass word for a bearing in degrees (0 = north, clockwise) */
@@ -32,10 +33,12 @@ export interface BriefingInput {
   /** last known point, local metres (x east, y north) */
   lkp: [number, number];
   deployments: DeploymentOut[];
+  /** USNG grid reference of a local point (10 m precision), read out digit by digit when given */
+  grid?: (x: number, y: number) => string | null;
 }
 
 /** One paragraph per team, in the order a radio briefing would give them. */
-export function briefingText({ area, time, lkp, deployments }: BriefingInput): string {
+export function briefingText({ area, time, lkp, deployments, grid }: BriefingInput): string {
   const n = deployments.length;
   const parts = [`Scentline briefing for ${area}. ${n} ${n === 1 ? 'team' : 'teams'}, planned for ${spokenTime(time)}.`];
   for (const d of deployments) {
@@ -45,8 +48,9 @@ export function briefingText({ area, time, lkp, deployments }: BriefingInput): s
     const where = dist < 150 ? 'at the last known point' : `${distance(dist)} ${compass((Math.atan2(dx, dy) * 180) / Math.PI)} of the last known point`;
     const heading = compass((Math.atan2(d.upwind[0], d.upwind[1]) * 180) / Math.PI);
     const pct = Math.round(d.coveredProb * 100);
+    const g = grid?.(d.x, d.y);
     parts.push(
-      `Team ${d.team}. Start ${where}. Work ${heading}, into a ${d.windSpeed.toFixed(1)} metre per second wind. ` +
+      `Team ${d.team}. Start ${where}${g ? `, grid ${spokenGrid(g)}` : ''}. Work ${heading}, into a ${d.windSpeed.toFixed(1)} metre per second wind. ` +
         `Best window ${spokenTime(d.bestWindow[0])} to ${spokenTime(d.bestWindow[1])}. ` +
         `This start covers ${pct < 1 ? 'under 1' : pct} percent of the probability.`,
     );

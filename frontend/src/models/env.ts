@@ -97,6 +97,51 @@ export function decayTau(env: Pick<Env, 'humidity' | 'temperature'>, sunlitHigh:
   return SCENT.baseTauS * humidityFactor * tempFactor * sunFactor * TUNING.tauScale;
 }
 
+/**
+ * Pasquill stability class as a number (A = 0 very unstable … F = 5 stable; halves are the
+ * table's in-between classes), from the 10 m wind, sun elevation and cloud cover (Turner's
+ * method, simplified). Day: stronger sun and lighter wind = more convective mixing. Night: clear
+ * skies and light wind = a stable surface layer. Overcast skies are neutral (D) day and night.
+ */
+export function stabilityClass(env: Pick<Env, 'windSpeed' | 'cloudCover' | 'sun'>): number {
+  const u = env.windSpeed;
+  const cloud = env.cloudCover;
+  if (cloud >= 90) return 3; // overcast
+  const row = u < 2 ? 0 : u < 3 ? 1 : u < 5 ? 2 : u < 6 ? 3 : 4;
+  if (env.sun.elevation > 0) {
+    // insolation: 0 strong, 1 moderate, 2 slight (low sun or broken cloud drop a step)
+    let ins = env.sun.elevation > 60 ? 0 : env.sun.elevation > 35 ? 1 : 2;
+    if (cloud > 50) ins = Math.min(2, ins + 1);
+    if (env.sun.elevation < 15) return Math.max(2, [2, 2.5, 3][ins]); // weak sun: near neutral
+    const DAY = [
+      [0, 0.5, 1], // < 2 m/s
+      [0.5, 1, 2], // 2-3
+      [1, 1.5, 2], // 3-5
+      [2, 2.5, 3], // 5-6
+      [2, 3, 3], // > 6
+    ];
+    return DAY[row][ins];
+  }
+  const cloudy = cloud >= 50;
+  const NIGHT = [
+    [5, 5], // < 2 m/s: stable (the table leaves it blank; F is the usual choice)
+    [4, 5], // 2-3
+    [3, 4], // 3-5
+    [3, 3], // 5-6
+    [3, 3], // > 6
+  ];
+  return NIGHT[row][cloudy ? 0 : 1];
+}
+
+/** Near-field σy/x for a (possibly in-between) stability class, interpolated between classes. */
+export function meanderCoef(cls: number, table: Record<string, number>): number {
+  const keys = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const lo = Math.max(0, Math.min(5, Math.floor(cls)));
+  const hi = Math.min(5, lo + 1);
+  const w = cls - lo;
+  return Math.exp((1 - w) * Math.log(table[keys[lo]]) + w * Math.log(table[keys[hi]]));
+}
+
 /** Human-readable scent conditions for the slider readout. */
 export function scentQuality(env: Env): { label: 'Good' | 'Fair' | 'Poor'; score: number; reason: string } {
   const sunHigh = env.sun.elevation > SCENT.sunHighElev;

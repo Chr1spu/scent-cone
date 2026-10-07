@@ -1,5 +1,5 @@
 /** Alert triangulation (CLAUDE.md §8.5): backward particle trace from an alert point. */
-import { SCENT, TRIANGULATION } from '../config/modelParams';
+import { SCENT, TRIANGULATION, TURBULENCE } from '../config/modelParams';
 import { boxBlur } from '../geo/grid';
 import { Rng } from './rng';
 import type { TerrainInfo } from './terrainInfo';
@@ -20,6 +20,8 @@ export interface BacktraceInput {
   perturbWind?: boolean;
   /** turbulence on/off (tests) */
   turbulence?: boolean;
+  /** meander strength σv/U at the alert (stability class); default neutral (class D) */
+  sigmaA?: number;
 }
 
 /** Integrates particles backward in time (x -= u·dt) and returns visited density, max-normalised. */
@@ -34,10 +36,18 @@ export function backtrace(inp: BacktraceInput): Float32Array {
   const X = new Float32Array(n);
   const Y = new Float32Array(n);
   const alive = new Uint8Array(n).fill(1);
+  // same meander process as the forward model (time-reversible: OU is symmetric in time)
+  const TU = new Float32Array(n);
+  const TV = new Float32Array(n);
+  const sigmaA = inp.sigmaA ?? TURBULENCE.briggsA.D;
+  const ouMemory = Math.exp(-dt / TURBULENCE.lagrangianS);
+  const ouKick = Math.sqrt(1 - ouMemory * ouMemory);
   const members = [];
   for (let i = 0; i < n; i++) {
     X[i] = inp.x + rng.normal() * 3;
     Y[i] = inp.y + rng.normal() * 3;
+    TU[i] = rng.normal();
+    TV[i] = rng.normal();
     members.push(inp.perturbWind === false ? { cos: 1, sin: 0, scale: 1 } : makeMember(rng));
   }
   const density = new Float32Array(cols * rows);
@@ -60,8 +70,11 @@ export function backtrace(inp: BacktraceInput): Float32Array {
       let y = Y[i] - uv[1] * k * dt * damp;
       if (turb) {
         const sig = Math.sqrt(2 * (SCENT.turbK0 + SCENT.turbKPerWind * speed) * dt) * damp;
-        x += sig * rng.normal();
-        y += sig * rng.normal();
+        TU[i] = TU[i] * ouMemory + ouKick * rng.normal();
+        TV[i] = TV[i] * ouMemory + ouKick * rng.normal();
+        const sv = Math.max(sigmaA * speed, TURBULENCE.minSigmaV) * TURBULENCE.scale * damp;
+        x += sv * TU[i] * dt + sig * rng.normal();
+        y += sv * TV[i] * dt + sig * rng.normal();
       }
       const c2 = Math.round(x * inv + ox);
       const r2 = Math.round(-y * inv + oy);

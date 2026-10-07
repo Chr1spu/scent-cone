@@ -1,4 +1,4 @@
-import { ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, TRIANGULATION, type ProfileId } from '../config/modelParams';
+import { ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, TRIANGULATION, TURBULENCE, type ProfileId } from '../config/modelParams';
 import { MISSIONS, visibleMissions, type SourceKind } from '../config/missions';
 import { noseWindFactor, LC } from '../models/terrainInfo';
 import { Link } from '../router';
@@ -172,7 +172,11 @@ export function Method() {
           <ul>
             <li>moves with the nose-height wind;</li>
             <li>
-              spreads randomly (turbulent diffusion K = {SCENT.turbK0} + {SCENT.turbKPerWind}·U m²/s);
+              meanders with gusts that sway the wind direction: a random sideways velocity with a spread of a·U that is remembered for about{' '}
+              {TURBULENCE.lagrangianS / 60} minutes, plus a little small-scale mixing (K = {SCENT.turbK0} m²/s). The coefficient a comes from the
+              Pasquill stability class (sun height, cloud cover and wind) and is set so plume widths match the standard Briggs curves: from{' '}
+              {TURBULENCE.briggsA.F} on a calm, clear night (a narrow plume that follows drainages) to {TURBULENCE.briggsA.A} on a sunny afternoon (a wide,
+              wandering one). The back-trace uses the same model;
             </li>
             <li>
               barely moves if the wind is under {SCENT.calmWind} m/s and it sits in a hollow (scent pools);

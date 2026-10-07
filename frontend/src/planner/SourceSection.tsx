@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { HABITAT_CLASSES, MISSIONS } from '../config/missions';
 import { PROFILES } from '../config/modelParams';
+import { shareBeyond } from '../models/probability';
 import { clearHides, finishPolygon, setHabitat, setProfile } from '../state/controller';
 import { useStore, type Tool } from '../state/store';
 import { Icon } from '../ui/icons';
@@ -30,6 +31,10 @@ export function SourceSection() {
   const tool = useStore((s) => s.tool);
   const draft = useStore((s) => s.searchDraft);
   const set = useStore((s) => s.set);
+  const mode = useStore((s) => s.mode);
+  const ov = useStore((s) => s.bundle?.overview.meta);
+  const areaKm = ov ? (Math.min(ov.cols, ov.rows) * ov.cellSize) / 1000 : 12;
+  const outside = ov && PROFILES[profile] ? shareBeyond(PROFILES[profile], (areaKm * 1000) / 2) : 0;
 
   if (mission.source === 'lkp' || mission.source === 'water') {
     return (
@@ -62,6 +67,18 @@ export function SourceSection() {
         {prob && mission.source === 'lkp' && (
           <p className="mt-2 text-[13px] text-ink-2">
             The 3 km focus square holds <span className="num font-semibold text-ink">{(prob.segmentFraction * 100).toFixed(0)}%</span> of the probability.
+          </p>
+        )}
+        {prob && mission.source === 'lkp' && prob.segmentFraction < 0.5 && (
+          <p className="mt-1.5 rounded-sm border-l-2 border-amber bg-amber/10 px-2 py-1 text-xs leading-snug text-ink-2">
+            Most of the probability is outside the focus square, where scent and team placements are not modelled. Plan the rest by probability, or move the square
+            {mode === 'live' ? ' (Focus square, below)' : ''}.
+          </p>
+        )}
+        {outside >= 0.05 && mission.source === 'lkp' && (
+          <p className="mt-1.5 text-xs leading-snug text-ink-3">
+            About <span className="num">{Math.round(outside * 100)}%</span> of where a {PROFILES[profile].label.toLowerCase()} typically ends up lies beyond the{' '}
+            {Math.round(areaKm)} km modelled area and isn&apos;t on the map.
           </p>
         )}
       </>

@@ -81,12 +81,30 @@ export const ENSEMBLE = {
   referenceParticles: 3000,
 };
 
+/**
+ * Plume meander: each particle carries a turbulent velocity that decorrelates over the Lagrangian
+ * time scale (an Ornstein-Uhlenbeck process). Its strength σv = a·U is set so a plume's lateral
+ * spread follows the Briggs (1973) open-country curves σy ≈ a·x·(1 + 0.0001x)^-0.5, with `a` from the
+ * Pasquill stability class (sun, cloud and wind decide how turbulent the air is).
+ */
+export const TURBULENCE = {
+  /** σy / downwind distance in the near field, by Pasquill class (Briggs, open country) */
+  briggsA: { A: 0.22, B: 0.16, C: 0.11, D: 0.08, E: 0.06, F: 0.04 } as Record<string, number>,
+  /** Lagrangian integral time scale (s): spread grows ∝ distance for travel times well below this */
+  lagrangianS: 600,
+  /** meander floor in near-calm air (m/s) */
+  minSigmaV: 0.08,
+  /** 1 = on (tests switch it off to check pure advection) */
+  scale: 1,
+};
+
 export const SCENT = {
   visibleParticles: 15000,
   dt: 2,
   stepsPerFrame: 3,
-  turbK0: 0.5,
-  turbKPerWind: 0.3,
+  /** small-scale mixing on top of the meander (m²/s); was the whole turbulence model before */
+  turbK0: 0.1,
+  turbKPerWind: 0,
   /** below this nose-height wind a particle in a local hollow is "pooling" */
   calmWind: 0.3,
   calmDamp: 0.3,
