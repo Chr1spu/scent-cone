@@ -7,6 +7,7 @@ import { useStore } from '../state/store';
 import { AlertZones } from './AlertZones';
 import { CameraRig } from './CameraRig';
 import { DogTeams } from './DogTeams';
+import { TrialTrack } from './TrialTrack';
 import { FeatureLines } from './FeatureLines';
 import { Heatmap } from './Heatmap';
 import { Landmarks } from './Landmarks';
@@ -80,6 +81,7 @@ export function SceneRoot({ bundle }: { bundle: AreaBundle }) {
       <ProbabilityLayer bundle={bundle} />
       <AlertZones bundle={bundle} />
       <DogTeams bundle={bundle} />
+      <TrialTrack bundle={bundle} />
       <Markers bundle={bundle} />
     </>
   );

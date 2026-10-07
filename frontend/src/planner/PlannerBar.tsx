@@ -69,7 +69,7 @@ export function PlannerBar() {
         <div className="truncate text-[11px] text-ink-3">
           {c && (
             <>
-              <span className="num">{c.date}</span> · {mode === 'live' ? 'live server' : 'bundled demo data'}
+              <span className="num">{c.date}</span> · {mode === 'live' ? 'live server' : mode === 'saved' ? 'saved on this device' : 'bundled demo data'}
             </>
           )}
         </div>

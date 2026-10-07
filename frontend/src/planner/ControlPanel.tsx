@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from '../router';
-import { computeDetailAt, deployTeams, fmtTime, releaseScent, resetSearch, scheduleHeat, setOnsiteWind } from '../state/controller';
+import { computeDetailAt, deployTeams, fmtTime, releaseScent, resetSearch, scheduleHeat, setOnsiteWind, windConfidenceAt } from '../state/controller';
 import { LAYER_LABELS, useStore, type LayerId, type Tool } from '../state/store';
 import { Icon } from '../ui/icons';
 import { SearchOptions } from './SearchOptions';
@@ -166,6 +166,7 @@ export function ControlPanel() {
             </button>
           )}
         </div>
+        <WindConfidenceNote measured={!!onsite} />
       </Section>
 
       {mode === 'live' && (
@@ -205,5 +206,26 @@ export function ControlPanel() {
         Keys: 1 to 7 demo steps, Space play, M map/3D, D debug, Esc cancel. <Link to="/guide">Full guide</Link>
       </p>
     </div>
+  );
+}
+
+const LEVEL_STYLE = { good: 'text-forest', fair: 'text-amber', poor: 'text-sar' } as const;
+
+/** How far to trust the forecast wind direction right now, and why. */
+function WindConfidenceNote({ measured }: { measured: boolean }) {
+  const time = useStore((s) => s.time);
+  const windVersion = useStore((s) => s.windVersion);
+  const lkp = useStore((s) => s.lkp);
+  const ready = useStore((s) => !!s.bundle);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const c = useMemo(() => (ready ? windConfidenceAt(time) : null), [ready, time, windVersion, lkp]);
+  if (!c) return null;
+  if (measured) return <p className="mt-1.5 text-xs leading-snug text-ink-3">Measured wind in use. Re-measure if it shifts; plans follow it.</p>;
+  return (
+    <p className="mt-1.5 text-xs leading-snug text-ink-2">
+      Forecast direction: <span className={`font-semibold ${LEVEL_STYLE[c.level]}`}>{c.level === 'good' ? 'reliable' : c.level === 'fair' ? 'uncertain' : 'unreliable'}</span>
+      {c.reasons.length > 0 ? ` (${c.reasons.join('; ')})` : ' (steady wind, models agree)'}.
+      {c.level !== 'good' && ' Measure the wind at the start points before committing teams.'}
+    </p>
   );
 }

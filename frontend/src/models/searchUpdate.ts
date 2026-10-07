@@ -1,6 +1,7 @@
 /** Negative updates (CLAUDE.md §8.6): a searched sector with no alert lowers probability. */
 import { HOTSPOTS, SEARCH } from '../config/modelParams';
 import { smoothstep, type GridMap } from '../geo/grid';
+import type { ReceiverDetection } from './detection';
 import type { DetThresholds } from './hotspots';
 import type { BlockIndex } from './scent';
 
@@ -28,7 +29,8 @@ export function sectorCentroid(s: SearchedSector): [number, number] {
 
 export interface SearchUpdateInput {
   sector: SearchedSector;
-  contrib: Float32Array;
+  /** absolute single-person detection per receiver (models/detection.ts) */
+  det: ReceiverDetection;
   blocks: BlockIndex;
   /** receiver-level heat for the search window and absolute (reference) detectability thresholds */
   heatRecv: Float32Array;
@@ -63,12 +65,13 @@ function srcCenter(b: BlockIndex, m: GridMap, s: number): [number, number] {
 }
 
 /**
- * POD(source) = 0.7 × fraction of the source's scent that reached the searched area above θ1.
- * Sources inside the sector itself get at least 0.7 × max(local detectability, close-range detectability):
- * the dog walked there.
+ * POD(source) = 0.7 × the best single-person detection anywhere in the searched area (the dog
+ * passed through scent that strong), and at least 0.7 × close-range detectability for sources
+ * inside the area itself (the dog walked there). The recheck flag uses scent conditions (heat
+ * against the reference thresholds) across the area.
  */
 export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
-  const { sector, contrib, blocks: b, heatRecv, th, map } = inp;
+  const { sector, blocks: b, heatRecv, th, map } = inp;
   const POD = inp.pod ?? HOTSPOTS.dogPOD;
   const inArea: number[] = [];
   let nearest = 0;
@@ -88,15 +91,10 @@ export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
   for (const r of inArea) detSum += smoothstep(th.lo, th.hi, heatRecv[r]);
   const meanDet = detSum / inArea.length;
   const podSrc = new Float32Array(b.nSrc);
+  for (const r of inArea) for (let k = inp.det.start[r]; k < inp.det.start[r + 1]; k++) podSrc[inp.det.src[k]] = Math.max(podSrc[inp.det.src[k]], POD * inp.det.det[k]);
   for (let s = 0; s < b.nSrc; s++) {
-    let total = 0;
-    for (let r = 0; r < b.nRecv; r++) total += contrib[r * b.nSrc + s];
-    let reached = 0;
-    if (total > 0) for (const r of inArea) if (heatRecv[r] > th.lo) reached += contrib[r * b.nSrc + s];
-    let pod = total > 0 ? POD * (reached / total) : 0;
     const [sx, sy] = srcCenter(b, map, s);
-    if (sectorContains(sector, sx, sy)) pod = Math.max(pod, POD * Math.max(meanDet, HOTSPOTS.nearDet));
-    podSrc[s] = Math.min(pod, POD);
+    if (sectorContains(sector, sx, sy)) podSrc[s] = Math.max(podSrc[s], POD * HOTSPOTS.nearDet);
   }
   const factor = new Float32Array(b.srcOf.length);
   for (let i = 0; i < factor.length; i++) factor[i] = 1 - podSrc[b.srcOf[i]];

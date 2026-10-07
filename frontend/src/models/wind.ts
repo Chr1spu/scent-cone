@@ -101,8 +101,8 @@ export interface EnsembleMember {
 export const IDENTITY_MEMBER: EnsembleMember = { cos: 1, sin: 0, scale: 1 };
 
 /** Ensemble perturbation: rotate by U(-20°, 20°), scale speed by U(0.7, 1.3). */
-export function makeMember(rng: Rng): EnsembleMember {
-  const d = (rng.uniform(-ENSEMBLE.rotDeg, ENSEMBLE.rotDeg) * Math.PI) / 180;
+export function makeMember(rng: Rng, rotDeg: number = ENSEMBLE.rotDeg): EnsembleMember {
+  const d = (rng.uniform(-rotDeg, rotDeg) * Math.PI) / 180;
   return { cos: Math.cos(d), sin: Math.sin(d), scale: rng.uniform(ENSEMBLE.scaleMin, ENSEMBLE.scaleMax) };
 }
 

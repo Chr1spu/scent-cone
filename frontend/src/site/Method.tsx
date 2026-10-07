@@ -1,4 +1,4 @@
-import { ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, TRIANGULATION, TURBULENCE, type ProfileId } from '../config/modelParams';
+import { DETECTION, DISPERSION, ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, TERRAIN, TRIANGULATION, TURBULENCE, WIND_CONFIDENCE, type ProfileId } from '../config/modelParams';
 import { MISSIONS, visibleMissions, type SourceKind } from '../config/missions';
 import { noseWindFactor, LC } from '../models/terrainInfo';
 import { Link } from '../router';
@@ -70,8 +70,10 @@ export function Method() {
 
           <h2 id="probability">1. Where the person might be</h2>
           <p>
-            Each 30 m cell gets a weight from the straight-line distance <em>d</em> to the last known point, using a log-normal distribution fitted to the profile&apos;s median distance (from
-            <em> Lost Person Behavior</em>, R. Koester). The density along the radius is divided by 2π<em>d</em> so it becomes a per-cell value.
+            Each 30 m cell gets a weight from the straight-line distance <em>d</em> to the last known point, using a log-normal distribution fitted to published find distances: the
+            median, and a spread from the quartiles (ln(Q75/Q25) / 1.349). Sources: Twardy, Koester &amp; Gatt (2006), <em>Missing Person Behaviour: An Australian Study</em> (children, hikers),
+            and ISRID data for dementia (temperate flat terrain, 175 cases). The young-child median is the original estimate and has not been checked against a source. The density along
+            the radius is divided by 2π<em>d</em> so it becomes a per-cell value.
           </p>
           <table>
             <thead>
@@ -79,7 +81,7 @@ export function Method() {
                 <th>Profile</th>
                 <th>Median distance</th>
                 <th>Spread (σ of ln d)</th>
-                <th>Trail/stream pull</th>
+                <th>Track offset</th>
                 <th>Note</th>
               </tr>
             </thead>
@@ -89,7 +91,7 @@ export function Method() {
                   <td>{PROFILES[id].label}</td>
                   <td className="num">{(PROFILES[id].medianM / 1000).toFixed(1)} km</td>
                   <td className="num">{PROFILES[id].spread}</td>
-                  <td className="num">×(1 + {PROFILES[id].featureA}·e^(−d/{PROFILES[id].featureL} m))</td>
+                  <td className="num">{PROFILES[id].terrain ? `${PROFILES[id].terrain!.trackOffsetM} m` : `×(1 + ${PROFILES[id].featureA}·e^(−d/${PROFILES[id].featureL} m))`}</td>
                   <td>{PROFILES[id].note}</td>
                 </tr>
               ))}
@@ -103,7 +105,15 @@ export function Method() {
               does.
             </li>
             <li>
-              <strong>Slope.</strong> ×e^(−slope/{PROBABILITY.slopeScaleDeg}°). Steep ground is less likely.
+              <strong>Terrain.</strong> Where real lost people were found (Jacobs 2015, about 2,200 ISRID find locations in the US): within the profile&apos;s track offset of a trail ×
+              {TERRAIN.trail}, a road ×{TERRAIN.road}, a stream ×{TERRAIN.stream}, a lake shore ×{TERRAIN.lake}, where a trail meets a stream ×{TERRAIN.trailStream}; the lowest{' '}
+              {pct(1 - TERRAIN.lowPct)} of the ground (valley bottoms) ×{TERRAIN.low} and the highest ×{TERRAIN.high}. Where several apply, the largest counts. Slope is neutral: the same
+              data shows no fewer finds on steep ground.
+            </li>
+            <li>
+              <strong>Heading when last seen</strong> (optional). Three in four lost people are found within 66° of the direction they set off in (ISRID, children and people with
+              dementia): the weight is {DISPERSION.cdf[1][1] * 100}% within {DISPERSION.cdf[1][0]}°, {DISPERSION.cdf[2][1] * 100}% within {DISPERSION.cdf[2][0]}° and{' '}
+              {DISPERSION.cdf[3][1] * 100}% within {DISPERSION.cdf[3][0]}°, fading in over the first {DISPERSION.fadeM} m.
             </li>
             <li>
               <strong>Time since missing.</strong> The distances above describe where people are eventually found. Early on, nobody can be that far, so the weight falls off softly
@@ -200,22 +210,35 @@ export function Method() {
           </p>
           <p>
             The heatmap is an average of {ENSEMBLE.members} runs over the last {ENSEMBLE.windowMin} minutes, each with the wind turned by up to ±{ENSEMBLE.rotDeg}° and scaled by{' '}
-            {ENSEMBLE.scaleMin}–{ENSEMBLE.scaleMax}, because forecast wind is never exact. Recent scent counts more (half-weight after {SCENT.accumHalfLifeS / 60} minutes).
+            {ENSEMBLE.scaleMin}–{ENSEMBLE.scaleMax}, because forecast wind is never exact. When the forecast direction looks unreliable (below) and no wind has been measured, the turn
+            widens to ±{ENSEMBLE.rotDegUncertain}°. Recent scent counts more (half-weight after {SCENT.accumHalfLifeS / 60} minutes).
+          </p>
+          <p>
+            <strong>Wind confidence.</strong> The planner rates the forecast direction around the last known point: unreliable when the wind is under {WIND_CONFIDENCE.poorSpeed} m/s,
+            when WindNinja and the simple slope model differ by {WIND_CONFIDENCE.poorDisagreeDeg}° or more, or when the wind turns {WIND_CONFIDENCE.poorTurnDeg}° or more within an hour
+            either side (the evening switch to downslope flow); uncertain from {WIND_CONFIDENCE.fairSpeed} m/s, {WIND_CONFIDENCE.fairDisagreeDeg}° and {WIND_CONFIDENCE.fairTurnDeg}°.
+            Simulated tests show scent-based placement loses its edge once the real wind is 20–30° off the forecast, so this rating decides how the plan hedges.
           </p>
           <Figure src={img('step-scent.jpg')} alt="Scent heatmap at 7 PM draining down the valley" caption="7 PM in the demo: cooling air drains scent down the notch toward the south-west." />
 
           <h2 id="detect">4. Detectability</h2>
           <p>
-            Scent concentration is turned into detectability with a smooth step between two thresholds. The thresholds are absolute: they come from a reference run with the same wind but
-            neutral scent conditions (no sun, no lofting, base decay), at its {pct(HOTSPOTS.detLoPct)} and {pct(HOTSPOTS.detHiPct)} percentiles. So a hot, sunny afternoon really does lower
-            detectability, and the time bar shows how much scent is present compared with that reference (59% at 3 PM and 107% at 7 PM in the demo).
+            Detection is worked out per possible location, as if the person were there: the scent that one spot alone sends to a team position, compared with a reference plume. The
+            reference is one person upwind in a steady {DETECTION.refWind} m/s neutral wind, simulated the same way; the dog detects them half the time {DETECTION.d50M} m straight
+            downwind, 90% of the time at half that distance and 10% at twice it. That distance is a heuristic default and the one number to tune from a dog&apos;s training record (see
+            the field trials). Because detection is absolute, a hot, sunny afternoon really does lower it.
+          </p>
+          <p>
+            The heatmap shows all the scent together, weighted by probability. The time bar compares it with a neutral-conditions reference run ({pct(HOTSPOTS.detLoPct)}–
+            {pct(HOTSPOTS.detHiPct)} percentile thresholds), which is what the scent-quality label and the searched-area recheck flag use.
           </p>
 
           <h2 id="deploy">5. Deploying teams</h2>
           <p>
-            While the scent runs, the model records which source areas (100 m blocks) send scent to which possible team positions (50 m blocks). A position scores the probability of all the
-            sources whose scent reaches it, times its detectability. A dog also finds a person it passes close to, so each position also covers the ground within{' '}
-            {HOTSPOTS.nearRadiusM} m at a detectability of {HOTSPOTS.nearDet}. Teams are then placed greedily:
+            While the scent runs, the model records which source areas (100 m blocks) send scent to which possible team positions (50 m blocks). Each candidate start gets a route: about{' '}
+            {HOTSPOTS.routeM} m upwind, following the modelled wind as it bends (dogs work into the wind), stopping at water, cliffs or calm air. The team covers each possible location
+            with the best detection anywhere along that route, and also the ground within {HOTSPOTS.nearRadiusM} m of it at a detectability of {HOTSPOTS.nearDet} (a dog finds a person
+            it passes close to). A start scores the probability it covers. Teams are then placed greedily:
           </p>
           <ol>
             <li>
@@ -230,9 +253,10 @@ export function Method() {
             </li>
           </ol>
           <p>
-            <strong>The hedge.</strong> Until a measured wind is entered, with {HOTSPOTS.hedgeMinTeams} or more teams the last one goes on the most likely ground by close range alone,
-            ignoring what the scent teams are thought to cover. In simulated tests it gives up about 1.6 points of coverage when the forecast is exact, but gains 2–3 points when the wind is
-            30–45° off. With the wind confirmed, every team is placed by scent.
+            <strong>The hedge.</strong> When the forecast direction is not rated reliable and no wind has been measured, with {HOTSPOTS.hedgeMinTeams} or more teams the last one goes on
+            the most likely ground by close range alone, ignoring what the scent teams are thought to cover, and the plan uses the wider ±{ENSEMBLE.rotDegUncertain}° spread. In
+            simulated tests that combination gives up about 4 points of coverage when the forecast is exact, but gains 4–6 points when the wind is 30–45° off, the best average over
+            the error range. With a reliable or measured wind, every team is placed by scent.
           </p>
           <p>
             Each team gets an upwind heading (dogs work into the wind toward the source) and its best hour, from hourly snapshots of the scent. Hotspots, the amber beacons, are simply the
@@ -248,7 +272,8 @@ export function Method() {
           <TriangulationDiagram />
           <p className="!mt-4">
             <strong>Searched with no alert.</strong> For a circle or polygon searched over a chosen window, each source area&apos;s probability is multiplied by 1 − POD, where POD ={' '}
-            {pct(HOTSPOTS.dogPOD)} × the share of that source&apos;s scent that reached the searched area above the first threshold. Areas searched while detectability was under{' '}
+            {pct(HOTSPOTS.dogPOD)} × the best detection of that source anywhere in the area (as for teams), and at least {pct(HOTSPOTS.dogPOD)} × {HOTSPOTS.nearDet} for sources inside
+            it. Areas searched while detectability was under{' '}
             {SEARCH.recheckDet} are flagged for a recheck.
           </p>
 

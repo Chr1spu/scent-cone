@@ -3,15 +3,19 @@
  * the store holds the results.
  */
 import { backendHealthy, loadLive, loadOffline, type LiveRequest } from '../api/loader';
+import { findSaved, loadSavedArea, saveArea } from '../api/savedAreas';
 import type { AreaBundle } from '../api/types';
 import { DEMO_ALERT_TIMES, VERT_EXAG } from '../config/constants';
-import { PROFILES, TIME, type ProfileId } from '../config/modelParams';
+import { ENSEMBLE, PROFILES, TIME, type ProfileId } from '../config/modelParams';
 import type { SearchedSector as SectorShape } from '../models/searchUpdate';
 import { MISSIONS, type HabitatSpec, type MissionId } from '../config/missions';
-import { toLocal, toWorld } from '../geo/grid';
+import { cellAt, toLocal, toWorld } from '../geo/grid';
 import { groundY } from '../geo/heights';
 import { sunAt, weatherAt } from '../models/env';
 import { travelLimitBinds } from '../models/probability';
+import { alertWaypoints, localHour, parseGpx, scoreTrial, thinTrack, type GpxPoint, type TrackPoint } from '../models/validation';
+import { latLonToUtm, zoneFromCrs } from '../geo/utm';
+import { samplePoints, windConfidence, type WindConfidence } from '../models/windConfidence';
 import { buildTerrainInfo, shadowMask, type TerrainInfo } from '../models/terrainInfo';
 import { computeFallbackWind, smoothedGradients, type TerrainGradients, type WindField } from '../models/wind';
 import { ComputeClient } from '../workers/client';
@@ -82,8 +86,12 @@ export async function boot(opts: BootOptions = {}) {
   if (!opts.live) {
     await loadMode('offline');
   } else if (!health.ok) {
-    set({ status: 'error', errorKind: 'server', error: 'The Scentline server is not reachable, so this area cannot be computed.' });
-    return;
+    // no server (no signal in the field?): use the copy of this area saved on the device, if any
+    const saved = await findSaved(opts.live);
+    if (!saved || !(await loadSaved(saved.id))) {
+      set({ status: 'error', errorKind: 'server', error: 'The Scentline server is not reachable, so this area cannot be computed.' });
+      return;
+    }
   } else {
     await loadMode('live', opts.live);
   }
@@ -97,6 +105,17 @@ export async function boot(opts: BootOptions = {}) {
 
 let loadGen = 0;
 
+/** Open an area saved on this device (no server needed). Returns whether it loaded. */
+export async function loadSaved(id: string): Promise<boolean> {
+  const gen = ++loadGen;
+  set({ status: 'loading', loadFrac: 0.3, loadLabel: 'Opening the copy saved on this device', error: null, errorKind: null });
+  const bundle = await loadSavedArea(id);
+  if (gen !== loadGen) return false;
+  if (!bundle) return false;
+  await applyBundle(bundle);
+  return true;
+}
+
 /** Load the offline bundle, or a live area (location/date/focus from `req`, else the last request). */
 export async function loadMode(mode: 'offline' | 'live', req?: LiveRequest) {
   const liveReq = req ?? get().liveRequest ?? {};
@@ -107,7 +126,10 @@ export async function loadMode(mode: 'offline' | 'live', req?: LiveRequest) {
   try {
     bundle = mode === 'live' ? await loadLive(onProgress, liveReq) : await loadOffline(onProgress);
     if (gen !== loadGen) return; // a newer load started (e.g. navigation)
-    if (mode === 'live') set({ liveRequest: liveReq });
+    if (mode === 'live') {
+      set({ liveRequest: liveReq });
+      saveArea(liveReq, bundle); // for use without a network later
+    }
   } catch (e) {
     if (gen !== loadGen) return;
     set({ status: 'error', errorKind: mode === 'live' ? 'server' : 'data', error: e instanceof Error ? e.message : String(e) });
@@ -131,6 +153,7 @@ async function applyBundle(b: AreaBundle) {
     windVersion: get().windVersion + 1,
     onsiteWind: null,
     profile: c.profile,
+    travelDir: null,
     teams: c.teams,
     lkp,
     time: (() => {
@@ -140,6 +163,7 @@ async function applyBundle(b: AreaBundle) {
     deployments: [],
     alerts: [],
     searched: [],
+    trial: null,
     revealed: false,
     heat: null,
     prob: null,
@@ -157,6 +181,8 @@ async function applyBundle(b: AreaBundle) {
     type: 'init',
     data: { frame: b.frame, overview: b.overview, detail: b.detail, features: b.features, weather: b.weather, place, wind: activeWind },
   });
+  sentSpread = ENSEMBLE.rotDeg; // a fresh worker starts at the default
+  await syncSpread();
   await recomputeProbability();
   // re-apply the current mission (its scent tuning, deployment rules and source) to the new area
   if (get().mission !== 'wilderness') await setMission(get().mission, { fly: false });
@@ -181,10 +207,10 @@ let probElapsed: number | undefined;
 let travelTimer: ReturnType<typeof setTimeout> | null = null;
 
 export async function recomputeProbability() {
-  const { profile, lkp, time } = get();
+  const { profile, lkp, time, travelDir } = get();
   const elapsedH = elapsedAt(time);
   probElapsed = elapsedH;
-  const p = await sourceCall(() => worker().call<ProbResult>({ type: 'probability', profile, lkp, elapsedH }));
+  const p = await sourceCall(() => worker().call<ProbResult>({ type: 'probability', profile, lkp, elapsedH, travelDir }));
   if (p) applyProb(p);
 }
 
@@ -311,6 +337,60 @@ export async function setProfile(profile: ProfileId) {
   get().toast(`Profile: ${PROFILES[profile].label} (median ${(PROFILES[profile].medianM / 1000).toFixed(1)} km)`);
 }
 
+/** Intended direction of travel (degrees from north) or null; reweights the map by ISRID dispersion. */
+export async function setTravelDir(deg: number | null) {
+  set({ travelDir: deg, deployments: [] });
+  await recomputeProbability();
+}
+
+/**
+ * Score a training run: GPX with the dog's track and alert waypoints, against the model's detection
+ * of the placed hides (docs/FIELD_TRIALS.md). The window ends at the track's last timestamp, or at
+ * the time bar if the GPX has none.
+ */
+export async function scoreTrialGpx(text: string, file: string) {
+  const b = get().bundle;
+  if (!b) return;
+  const zone = zoneFromCrs(b.detail.meta.crs);
+  if (!zone) {
+    get().toast('This area is not on a UTM grid; GPX import needs one.', 'warn');
+    return;
+  }
+  const g = parseGpx(text);
+  const toLocalPt = (p: GpxPoint) => {
+    const u = latLonToUtm(p.lat, p.lon, zone);
+    return { x: u.e - b.frame.cx, y: u.n - b.frame.cy };
+  };
+  const off = b.config.utcOffsetSeconds;
+  const track: TrackPoint[] = thinTrack(
+    g.track.map((p) => ({ ...toLocalPt(p), t: p.time === null ? null : localHour(p.time, off), alert: false })),
+    10,
+  );
+  const alerts: TrackPoint[] = alertWaypoints(g.waypoints).map((p) => ({ ...toLocalPt(p), t: p.time === null ? null : localHour(p.time, off), alert: true }));
+  const inside = (p: TrackPoint) => terrain !== null && cellAtLocal(p.x, p.y) >= 0;
+  const pts = [...track, ...alerts].filter(inside);
+  if (pts.filter((p) => p.alert).length === 0 || pts.length < 5) {
+    get().toast('Need a track and at least one alert waypoint inside the focus square.', 'warn');
+    return;
+  }
+  const times = pts.map((p) => p.t).filter((t): t is number => t !== null);
+  const c = b.config;
+  const t = times.length ? Math.min(Math.max(Math.max(...times), c.startHour + 1), c.endHour) : get().time;
+  const det = await withBusy('Scoring the run', () =>
+    worker().call<Float32Array>({ type: 'trial', pts: pts.map((p) => [p.x, p.y] as [number, number]), t }, progress('Scoring the run')),
+  );
+  if (!det) return;
+  const idx = new Map(pts.map((p, i) => [p, i]));
+  const score = scoreTrial(pts, (p) => det[idx.get(p)!]);
+  const { points, ...summary } = score;
+  set({ trial: { file, t, score: summary, points } });
+  get().toast(summary.auc === null ? 'Run scored.' : `Run scored: AUC ${summary.auc.toFixed(2)} (0.5 = chance, 1 = perfect)`, 'success');
+}
+
+function cellAtLocal(x: number, y: number): number {
+  return terrain ? cellAt(terrain.map, x, y) : -1;
+}
+
 export async function setLkp(lx: number, ly: number) {
   set({ lkp: [lx, ly], deployments: [], tool: 'none' });
   await recomputeProbability();
@@ -362,6 +442,7 @@ export function setTime(t: number) {
   const t0 = c?.startHour ?? TIME.start;
   const t1 = c?.endHour ?? TIME.end;
   set({ time: Math.min(Math.max(t, t0), t1) });
+  syncSpread();
   scheduleHeat();
   maybeRecomputeForTime();
 }
@@ -395,6 +476,7 @@ async function applyWind(src: 'windninja' | 'fallback', onsite: State['onsiteWin
   }
   set({ windSource: src, activeWind: field, onsiteWind: onsite, windVersion: get().windVersion + 1 });
   await worker().call({ type: 'setWind', wind: field });
+  await syncSpread();
   scheduleHeat(0);
 }
 
@@ -411,6 +493,31 @@ export async function setOnsiteWind(dir: number | null, speed: number | null) {
   get().toast(`On-site wind ${speed.toFixed(1)} m/s from ${Math.round(dir)}° applied to ${hour}:00 (fallback model)`, 'success');
 }
 
+/** Confidence in the modelled wind direction around the last known point at time t (null before load). */
+export function windConfidenceAt(t: number): WindConfidence | null {
+  const { bundle: b, activeWind, windSource, lkp } = get();
+  if (!b || !activeWind || !terrain) return null;
+  const alt = windSource === 'windninja' ? b.fallback : b.windninja;
+  return windConfidence(activeWind, alt, terrain.map, samplePoints(terrain.map, lkp[0], lkp[1]), t);
+}
+
+let sentSpread = ENSEMBLE.rotDeg;
+
+/**
+ * Planning ensemble spread for the current time: the usual ±20° when the wind is measured on site
+ * or the forecast looks reliable, wider when it doesn't (docs/EVALUATION.md). Tells the worker when
+ * it changes; returns whether it did.
+ */
+async function syncSpread(): Promise<boolean> {
+  const { onsiteWind, time } = get();
+  const level = windConfidenceAt(time)?.level ?? 'good';
+  const rotDeg = onsiteWind !== null || level === 'good' ? ENSEMBLE.rotDeg : ENSEMBLE.rotDegUncertain;
+  if (rotDeg === sentSpread) return false;
+  sentSpread = rotDeg;
+  await worker().call({ type: 'setSpread', rotDeg });
+  return true;
+}
+
 export function forecastAt(t: number) {
   const b = get().bundle;
   return b ? weatherAt(b.weather, t) : null;
@@ -420,8 +527,10 @@ export function forecastAt(t: number) {
 
 export async function deployTeams() {
   const { teams, time, onsiteWind, mission } = get();
-  // until the wind is confirmed on site, hedge one team onto the most likely ground
-  const hedge = onsiteWind === null && MISSIONS[mission].source === 'lkp';
+  // until the wind is confirmed on site, and unless the forecast looks trustworthy, hedge one team
+  // onto the most likely ground
+  const hedge = onsiteWind === null && MISSIONS[mission].source === 'lkp' && windConfidenceAt(time)?.level !== 'good';
+  await syncSpread();
   const deps = await withBusy('Deploying teams', () =>
     worker().call<DeploymentOut[]>({ type: 'deploy', t: time, teams, hedge }, progress('Deploying teams')),
   );

@@ -7,8 +7,10 @@
  *   - The plan is made with the forecast wind (WindNinja, 19:00, window 18:00-19:00).
  *   - "Truth worlds" re-run the scent with the wind rotated by e degrees (random sign) and its
  *     speed scaled by U(0.7, 1.3), plus a different turbulence seed: the world as it might really be.
- *   - In each world, a team at receiver block r finds a person at source block s with probability
- *     POD · det(r) when s is among the sources whose scent reaches r (the app's own coverage rule).
+ *   - In each world, each team works a route upwind from its start in the TRUE wind (a handler
+ *     follows the wind they feel) and finds a person at source block s with probability
+ *     POD · det, where det is the best absolute single-person detection along the route in that
+ *     world (single-plume calibration), or close-range detection within 150 m of the route.
  *   - Success = Σ_s P(person at s) · P(at least one team finds them).
  * This scores plans under the model's own physics, so it measures robustness to wind error and the
  * value of planning with scent at all, not agreement with real dogs (that needs field trials).
@@ -18,10 +20,12 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ENSEMBLE, HOTSPOTS, PROFILES, SCENT, TURBULENCE } from '../src/config/modelParams';
+import { DETECTION, ENSEMBLE, HOTSPOTS, PROFILES, SCENT, TURBULENCE } from '../src/config/modelParams';
 import { loadOffline } from '../src/api/loader';
 import { cellCenterLocal, gridMap, toLocal } from '../src/geo/grid';
-import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, sourceSums, contributingSources, nearSources, teamCoverage, type DetThresholds } from '../src/models/hotspots';
+import { calibrateDetection, receiverDetection, type ReceiverDetection } from '../src/models/detection';
+import { deployableCells, greedyDeploy, routeCoverage, sourceSums, traceRoute, type WindAt } from '../src/models/hotspots';
+import { samplePoints, windConfidence } from '../src/models/windConfidence';
 import { barrierFactor, buildStaticLayers, computeProbability, rasterizeLines, rasterizePolygons, resampleToDetail } from '../src/models/probability';
 import { Rng } from '../src/models/rng';
 import { blockIndex, runEnsemble, type BlockIndex } from '../src/models/scent';
@@ -72,17 +76,19 @@ log(`demo loaded: ${cols}x${rows} detail grid, focus square holds ${(segmentFrac
 // ---------------------------------------------------------------- scent runs
 interface Run {
   contrib: Float32Array;
-  heatRecv: Float32Array;
   heat: Float32Array;
+  field: WindField;
 }
 function scent(field: WindField, seed: number, members = ENSEMBLE.members): Run {
   const { heat, contrib } = runEnsemble({ ti, field, place, weather: b.weather, prob, tEnd: T, members, particles: QUICK ? 2500 : ENSEMBLE.particlesPerMember, blocks, seed });
-  return { heat, contrib: contrib!, heatRecv: blockMean(heat, cols, rows, blocks) };
+  return { heat, contrib: contrib!, field };
 }
-function reference(field: WindField): DetThresholds {
-  const ref = runEnsemble({ ti, field, place, weather: b.weather, prob, tEnd: T, members: ENSEMBLE.referenceMembers, particles: ENSEMBLE.referenceParticles, neutral: true, seed: 7 });
-  return detThresholds(blockMean(ref.heat, cols, rows, blocks));
-}
+const windAtOf =
+  (field: WindField): WindAt =>
+  (x, y) =>
+    sampleWind(field, ti.map, x, y, T);
+/** physical (single plume) calibration: what a dog in the true world detects */
+const physCurve = calibrateDetection({ members: 1 });
 function rotated(field: WindField, deg: number, scale: number): WindField {
   const r = (deg * Math.PI) / 180;
   const cs = Math.cos(r) * scale;
@@ -128,9 +134,33 @@ function spaced(cands: number[], k: number, sepM: number): number[] {
   return out;
 }
 
-function scentlinePlan(run: Run, thRecv: DetThresholds, pod = HOTSPOTS.dogPOD, spacingM = HOTSPOTS.suppressRadiusM): number[] {
-  const detRecv = detectability(run.heatRecv, thRecv);
-  return greedyDeploy({ contrib: run.contrib, blocks, detRecv, heat: run.heat, q, deployable, map: ti.map, teams: TEAMS, pod, spacingM }).map((d) => d.cell);
+interface PlanOpts {
+  pod?: number;
+  spacingM?: number;
+  d50M?: number;
+  routeM?: number;
+  scentTeams?: number;
+  /** single-realization run (oracle): use the physical calibration */
+  physical?: boolean;
+}
+function scentlinePlan(run: Run, o: PlanOpts = {}): number[] {
+  const curve = o.physical ? physCurve : calibrateDetection({ d50M: o.d50M });
+  return greedyDeploy({
+    contrib: run.contrib,
+    blocks,
+    curve,
+    windAt: windAtOf(run.field),
+    routeM: o.routeM,
+    heat: run.heat,
+    q,
+    prob,
+    deployable,
+    map: ti.map,
+    teams: TEAMS,
+    pod: o.pod,
+    spacingM: o.spacingM,
+    scentTeams: o.scentTeams,
+  }).map((d) => d.cell);
 }
 const probabilityPlan = () =>
   spaced(
@@ -156,24 +186,19 @@ function randomPlan(rng: Rng): number[] {
 // ---------------------------------------------------------------- scoring in a world
 interface World {
   run: Run;
-  det: Float32Array;
-  contribSets: Map<number, Set<number>>;
+  det: ReceiverDetection;
+  windAt: WindAt;
 }
-function world(run: Run, thRecv: DetThresholds): World {
-  return { run, det: detectability(run.heatRecv, thRecv), contribSets: new Map() };
+function world(run: Run): World {
+  return { run, det: receiverDetection(run.contrib, q, blocks, physCurve), windAt: windAtOf(run.field) };
 }
 function success(plan: number[], w: World, pod = HOTSPOTS.dogPOD): number {
   const miss = new Float64Array(blocks.nSrc).fill(1);
   for (const cell of plan) {
-    const r = recvOfCell(cell);
-    let set = w.contribSets.get(r);
-    if (!set) {
-      set = new Set(contributingSources(w.run.contrib, blocks.nSrc, r));
-      w.contribSets.set(r, set);
-    }
-    // same detection rule as the planner: scent that reaches the team, plus close range
-    const near = HOTSPOTS.nearDet > 0 ? nearSources(blocks, ti.map, r, HOTSPOTS.nearRadiusM) : [];
-    for (const [s, d] of teamCoverage([...set], w.det[r], near, HOTSPOTS.nearDet)) miss[s] *= 1 - pod * d;
+    const [x, y] = cellXY(cell);
+    const route = traceRoute(ti.map, deployable, x, y, w.windAt, HOTSPOTS.routeM);
+    const c = routeCoverage(route, { blocks, map: ti.map, det: w.det });
+    for (let k = 0; k < c.src.length; k++) miss[c.src[k]] *= 1 - pod * c.d[k];
   }
   let found = 0;
   for (let s = 0; s < blocks.nSrc; s++) found += q[s] * (1 - miss[s]);
@@ -182,27 +207,25 @@ function success(plan: number[], w: World, pod = HOTSPOTS.dogPOD): number {
 
 // ---------------------------------------------------------------- question 1
 log('model ensemble (forecast wind)…');
-const thRecv = reference(wind);
+const conf = windConfidence(wind, b.windninja ? b.fallback : null, ti.map, samplePoints(ti.map, lkp[0], lkp[1]), T);
+log(`wind confidence at ${T}:00: ${conf.level} (speed ${conf.speed.toFixed(1)} m/s, models differ ${conf.disagreeDeg?.toFixed(0) ?? '-'}°, turn ${conf.turnDeg.toFixed(0)}°)`);
 const model = scent(wind, 1000 + T * 60);
-/** Hedge against a wrong forecast, as the planner does it: the last team on the most likely ground. */
-function hedgedPlan(run: Run, th: DetThresholds): number[] {
-  const detRecv = detectability(run.heatRecv, th);
-  return greedyDeploy({ contrib: run.contrib, blocks, detRecv, heat: run.heat, q, deployable, map: ti.map, teams: TEAMS, prob, scentTeams: TEAMS - 1 }).map((d) => d.cell);
-}
-/** The earlier hedge: two scent teams plus the single most likely cell, 300 m clear of them. */
-function naiveHedgedPlan(run: Run, th: DetThresholds): number[] {
-  const detRecv = detectability(run.heatRecv, th);
-  const scentTeams = greedyDeploy({ contrib: run.contrib, blocks, detRecv, heat: run.heat, q, deployable, map: ti.map, teams: TEAMS - 1 }).map((d) => d.cell);
-  const extra = [...Array(nD).keys()]
-    .filter((i) => deployable[i])
-    .sort((a, b2) => prob[b2] - prob[a])
-    .find((i) => scentTeams.every((j) => Math.hypot(cellXY(i)[0] - cellXY(j)[0], cellXY(i)[1] - cellXY(j)[1]) >= HOTSPOTS.suppressRadiusM));
-  return extra === undefined ? scentTeams : [...scentTeams, extra];
-}
+const wide = (() => {
+  const save = ENSEMBLE.rotDeg;
+  ENSEMBLE.rotDeg = 35;
+  const run = scent(wind, 1000 + T * 60);
+  const p = { all: scentlinePlan(run), hedged: scentlinePlan(run, { scentTeams: TEAMS - 1 }) };
+  ENSEMBLE.rotDeg = save;
+  return p;
+})();
+const appRule = conf.level === 'good' ? 'all teams by scent, ±20° planning' : 'one team hedged on likely ground, ±35° planning';
+log(`app rule for this wind: ${appRule}`);
 const plans: Record<string, number[]> = {
-  Scentline: scentlinePlan(model, thRecv),
-  'Hedged (2 by scent + 1 on most-likely ground)': hedgedPlan(model, thRecv),
-  'Naive hedge (+ single most likely cell)': naiveHedgedPlan(model, thRecv),
+  [`Scentline (app rule: ${appRule})`]: conf.level === 'good' ? scentlinePlan(model) : wide.hedged,
+  'Scent±20 (all teams by scent, ±20° planning)': scentlinePlan(model),
+  'Scent±35 (all teams by scent, ±35° planning)': wide.all,
+  'Hedge±20 (2 by scent + 1 on likely ground, ±20°)': scentlinePlan(model, { scentTeams: TEAMS - 1 }),
+  'NoRoute (±20°, starts planned without routes)': scentlinePlan(model, { routeM: 0 }),
   'Most-likely ground (no scent)': probabilityPlan(),
   'Ring around the LKP': lkpRingPlan(),
   'Straight downwind of the LKP': downwindPlan(),
@@ -225,11 +248,11 @@ for (const err of ERRORS) {
     const sign = wrng.next() < 0.5 ? -1 : 1;
     const truthField = rotated(wind, sign * err, wrng.uniform(0.7, 1.3));
     const truthRun = scent(truthField, 5000 + 31 * k + err, 1);
-    const w = world(truthRun, thRecv);
+    const w = world(truthRun);
     worldsByErr.get(err)!.push(w);
     for (const [name, plan] of Object.entries(plans)) per[name].push(success(plan, w));
     per['Random (within 1.5 km)'].push(randomPlans.reduce((s, p) => s + success(p, w), 0) / randomPlans.length);
-    per['Oracle (knows the true wind)'].push(success(scentlinePlan(truthRun, thRecv), w));
+    per['Oracle (knows the true wind)'].push(success(scentlinePlan(truthRun, { physical: true }), w));
   }
   const rowsOut: Record<string, { m: number; sd: number }> = {};
   for (const [name, v] of Object.entries(per)) rowsOut[name] = meanStd(v);
@@ -245,7 +268,7 @@ const spread: { rotDeg: number; byErr: Record<number, number>; mean: number }[] 
 const saveRot = ENSEMBLE.rotDeg;
 for (const rot of [20, 35, 50]) {
   ENSEMBLE.rotDeg = rot;
-  const plan = scentlinePlan(scent(wind, 1000 + T * 60), thRecv);
+  const plan = scentlinePlan(scent(wind, 1000 + T * 60));
   ENSEMBLE.rotDeg = saveRot;
   const byErr: Record<number, number> = {};
   for (const err of ERRORS) {
@@ -259,8 +282,8 @@ for (const rot of [20, 35, 50]) {
 
 // ---------------------------------------------------------------- question 2: sensitivity
 log('sensitivity…');
-const truthRef = [0, 1, 2].map((k) => world(scent(rotated(wind, (k - 1) * 15, 1), 7000 + k, 1), thRecv)); // modest wind error
-const basePlan = plans.Scentline;
+const truthRef = [0, 1, 2].map((k) => world(scent(rotated(wind, (k - 1) * 15, 1), 7000 + k, 1))); // modest wind error
+const basePlan = scentlinePlan(model);
 const baseScore = truthRef.reduce((s, w) => s + success(basePlan, w), 0) / truthRef.length;
 const shift = (plan: number[]) => {
   // mean distance from each new start to the nearest base start
@@ -270,8 +293,7 @@ interface Variant {
   name: string;
   apply: () => void;
   undo: () => void;
-  pod?: number;
-  spacing?: number;
+  plan?: PlanOpts;
 }
 const save = { ...SCENT };
 const saveT = { ...TURBULENCE, briggsA: { ...TURBULENCE.briggsA } };
@@ -289,26 +311,29 @@ const variants: Variant[] = [
   { name: 'Plume spread ×2', apply: () => scaleBriggs(2), undo: restore },
   { name: 'Turbulence memory 300 s', apply: () => (TURBULENCE.lagrangianS = 300), undo: restore },
   { name: 'Turbulence memory 1200 s', apply: () => (TURBULENCE.lagrangianS = 1200), undo: restore },
-  { name: 'Dog detection 50%', apply: () => {}, undo: () => {}, pod: 0.5 },
-  { name: 'Dog detection 90%', apply: () => {}, undo: () => {}, pod: 0.9 },
+  { name: 'Team acts on a detection 50%', apply: () => {}, undo: () => {}, plan: { pod: 0.5 } },
+  { name: 'Team acts on a detection 90%', apply: () => {}, undo: () => {}, plan: { pod: 0.9 } },
+  { name: 'Dog range (d50) 120 m', apply: () => {}, undo: () => {}, plan: { d50M: 120 } },
+  { name: 'Dog range (d50) 320 m', apply: () => {}, undo: () => {}, plan: { d50M: 320 } },
+  { name: 'Route 300 m', apply: () => {}, undo: () => {}, plan: { routeM: 300 } },
+  { name: 'Route 1000 m', apply: () => {}, undo: () => {}, plan: { routeM: 1000 } },
   { name: 'Close-range detectability 0.3', apply: () => (HOTSPOTS.nearDet = 0.3), undo: () => (HOTSPOTS.nearDet = 0.6) },
   { name: 'Close-range detectability 0.9', apply: () => (HOTSPOTS.nearDet = 0.9), undo: () => (HOTSPOTS.nearDet = 0.6) },
-  { name: 'Team spacing 150 m', apply: () => {}, undo: () => {}, spacing: 150 },
-  { name: 'Team spacing 500 m', apply: () => {}, undo: () => {}, spacing: 500 },
+  { name: 'Team spacing 150 m', apply: () => {}, undo: () => {}, plan: { spacingM: 150 } },
+  { name: 'Team spacing 500 m', apply: () => {}, undo: () => {}, plan: { spacingM: 500 } },
 ];
 const sens: { name: string; shiftM: number; score: number }[] = [];
 for (const v of variants) {
   v.apply();
-  const scentChanged = v.pod === undefined && v.spacing === undefined;
+  const scentChanged = v.plan === undefined;
   const run = scentChanged ? scent(wind, 1000 + T * 60) : model;
-  const th = scentChanged ? reference(wind) : thRecv;
-  const plan = scentlinePlan(run, th, v.pod ?? HOTSPOTS.dogPOD, v.spacing ?? HOTSPOTS.suppressRadiusM);
+  const plan = scentlinePlan(run, v.plan);
   v.undo();
   const score = truthRef.reduce((s, w) => s + success(plan, w), 0) / truthRef.length;
   sens.push({ name: v.name, shiftM: shift(plan), score });
   log(`${v.name}: starts move ${shift(plan).toFixed(0)} m, success ${(score * 100).toFixed(1)}% (base ${(baseScore * 100).toFixed(1)}%)`);
 }
 
-const out = { date: new Date().toISOString(), quick: QUICK, worlds: WORLDS, segmentFraction, deployHour: T, teams: TEAMS, trials: table, ensembleSpread: spread, sensitivity: { baseScore, variants: sens } };
+const out = { date: new Date().toISOString(), quick: QUICK, worlds: WORLDS, segmentFraction, deployHour: T, teams: TEAMS, detection: { d50M: DETECTION.d50M, routeM: HOTSPOTS.routeM }, windConfidence: conf, trials: table, ensembleSpread: spread, sensitivity: { baseScore, variants: sens } };
 writeFileSync(join(__dirname, 'evaluation-results.json'), JSON.stringify(out, null, 1));
 log('wrote scripts/evaluation-results.json');

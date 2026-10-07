@@ -303,6 +303,8 @@ export interface EnsembleInput {
   blocks?: BlockIndex;
   /** neutral scent conditions (reference run for absolute detectability thresholds) */
   neutral?: boolean;
+  /** wind-direction spread of the members (±degrees), default ENSEMBLE.rotDeg */
+  rotDeg?: number;
   /**
    * Run only members [from, to) of the `members` ensemble (for parallel workers). Weights and
    * random draws are those of the full run, so summing the slices reproduces it exactly.
@@ -339,7 +341,7 @@ export function runEnsemble(inp: EnsembleInput): EnsembleResult {
   const memberRng = new Rng(seed ^ 0x9e3779b9);
   const [from, to] = inp.memberRange ?? [0, members];
   for (let mi = 0; mi < members; mi++) {
-    const member = members === 1 ? IDENTITY_MEMBER : makeMember(memberRng);
+    const member = members === 1 ? IDENTITY_MEMBER : makeMember(memberRng, inp.rotDeg);
     if (mi < from || mi >= to) continue;
     const sim = createSim({ ti: inp.ti, prob: inp.prob, n, seed: seed + 101 * mi, sources, staggerS: Math.min(SCENT.lifetimeS, windowS) });
     let se: StepEnv | null = null;

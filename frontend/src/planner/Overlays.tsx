@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react';
+import { listSavedAreas, type SavedAreaMeta } from '../api/savedAreas';
+import { loadSaved } from '../state/controller';
 import { Link } from '../router';
 import { useStore } from '../state/store';
 import { Logo } from '../ui/icons';
@@ -75,6 +78,7 @@ export function LoadingScreen() {
                 Start the server with <code className="rounded-sm bg-paper-2 px-1 font-mono text-sm">docker compose up</code> and set its address on the search page, or explore the bundled demo.
               </p>
             )}
+            {errorKind === 'server' && <SavedAreasList />}
             <div className="mt-5 flex flex-wrap gap-2">
               <Link to="/planner?demo" className="btn btn-primary">
                 Open the demo
@@ -97,6 +101,30 @@ export function LoadingScreen() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Areas saved on this device: open one without a server. */
+function SavedAreasList() {
+  const [areas, setAreas] = useState<SavedAreaMeta[] | null>(null);
+  useEffect(() => {
+    listSavedAreas().then(setAreas);
+  }, []);
+  if (!areas || areas.length === 0) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-sm font-semibold text-ink">Saved on this device</p>
+      <ul className="mt-1 space-y-1">
+        {areas.map((a) => (
+          <li key={a.id}>
+            <button className="btn btn-sm w-full justify-between" onClick={() => loadSaved(a.id)}>
+              <span className="truncate">{a.name}</span>
+              <span className="num text-xs text-ink-3">{a.date}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

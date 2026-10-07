@@ -8,8 +8,9 @@ import { envAt } from '../models/env';
 import { MISSIONS, type MissionId } from '../config/missions';
 import { aggregateToOverview, areaPrior, habitatPrior, hidesPrior, waterPrior } from '../models/sources';
 import { setTuning } from '../models/tuning';
-import { cellCenterLocal, gridMap, insideGrid, localBounds, type GridMap } from '../geo/grid';
-import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, snapshotScore, sourceSums, withinReach, type DetThresholds } from '../models/hotspots';
+import { cellAt, cellCenterLocal, gridMap, insideGrid, localBounds, type GridMap } from '../geo/grid';
+import { blockMean, deployableCells, detThresholds, greedyDeploy, snapshotScore, sourceSums, withinReach, type DetThresholds } from '../models/hotspots';
+import { calibrateDetection, receiverDetection } from '../models/detection';
 import {
   applyBrush,
   barrierFactor,
@@ -59,6 +60,10 @@ interface State {
   lkp: [number, number];
   /** hours since the person went missing, for the travel limit (undefined = none) */
   elapsedH: number | undefined;
+  /** planning ensemble spread (±degrees) */
+  rotDeg: number;
+  /** intended direction of travel (degrees from north) or null */
+  travelDir: number | null;
   warmed: boolean;
   mission: MissionId;
   source: SourceSpec;
@@ -117,6 +122,8 @@ function init(m: InitMsg) {
     barrierCache: new Map(),
     edits: new Float32Array(m.overview.elev.length).fill(1),
     elapsedH: undefined,
+    rotDeg: ENSEMBLE.rotDeg,
+    travelDir: null,
     prior: null,
     L: new Float32Array(nD).fill(1),
     outside: 1,
@@ -193,6 +200,7 @@ function recomputePrior() {
     profile: PROFILES[s.profile],
     edits: s.edits,
     elapsedH: s.elapsedH,
+    travelDirDeg: s.travelDir,
     lowGroundBias: mission.tuning.lowGroundBias,
   });
 }
@@ -248,7 +256,7 @@ function setMission(mission: MissionId, source: SourceSpec): ProbResult {
  */
 async function ensembleAt(t: number, report: (f: number, l: string) => void, windowMin: number = ENSEMBLE.windowMin): Promise<Ensemble> {
   const s = st();
-  const key = `${s.probVersion}:${s.windVersion}`;
+  const key = `${s.probVersion}:${s.windVersion}:${s.rotDeg}`;
   if (s.last && s.last.key === key && Math.abs(s.last.t - t) < 1e-6 && s.last.windowMin === windowMin) return s.last;
   const base = { ti: s.ti, field: s.wind, place: s.init.place, weather: s.init.weather, prob: s.detailPost!, tEnd: t, windowMin };
   const total = ENSEMBLE.members + ENSEMBLE.referenceMembers;
@@ -257,7 +265,7 @@ async function ensembleAt(t: number, report: (f: number, l: string) => void, win
   const tick = () => report(0.05 + 0.9 * ((doneMain * ENSEMBLE.members + doneRef * ENSEMBLE.referenceMembers) / total), 'Scent ensemble');
   // the ensemble and its neutral reference run together across the helper pool
   const [main, ref] = await Promise.all([
-    parallelEnsemble(pool, { ...base, members: ENSEMBLE.members, blocks: s.blocks, seed: 1000 + Math.round(t * 60) }, (f) => {
+    parallelEnsemble(pool, { ...base, members: ENSEMBLE.members, rotDeg: s.rotDeg, blocks: s.blocks, seed: 1000 + Math.round(t * 60) }, (f) => {
       doneMain = f;
       tick();
     }),
@@ -349,14 +357,14 @@ async function deploy(t: number, teams: number, hedge: boolean, report: (f: numb
   const s = st();
   const e = await ensembleAt(t, (f, l) => report(f * 0.55, l));
   report(0.56, 'Greedy deployment');
-  const detRecv = detectability(e.heatRecv, e.thRecv);
   const tune = MISSIONS[s.mission].tuning;
   const deps = greedyDeploy({
     pod: tune.pod,
     spacingM: tune.spacingM,
     contrib: e.contrib,
     blocks: s.blocks,
-    detRecv,
+    curve: calibrateDetection({ rotDeg: s.rotDeg }),
+    windAt: (x, y) => sampleWind(s.wind, s.ti.map, x, y, t),
     heat: e.heat,
     q: sourceSums(s.detailPost!, s.blocks),
     deployable: tune.reachM === null ? s.deployable : withinReach(s.deployable, s.detailPost!, s.ti.meta.cols, s.ti.meta.rows, s.ti.meta.cellSize, tune.reachM),
@@ -389,8 +397,29 @@ async function deploy(t: number, teams: number, hedge: boolean, report: (f: numb
       bestWindow: [best.hour - 1, best.hour] as [number, number],
       windowScores,
       kind: d.kind,
+      route: d.route,
     };
   });
+}
+
+/**
+ * For each point, the model's chance that a dog there detects one of the sources (in Training:
+ * the hides), over the hour ending at t. Same detection as deployment planning.
+ */
+async function trialDetection(pts: [number, number][], t: number, report: (f: number, l: string) => void): Promise<Float32Array> {
+  const s = st();
+  const e = await ensembleAt(t, (f, l) => report(f * 0.9, l));
+  const det = receiverDetection(e.contrib, sourceSums(s.detailPost!, s.blocks), s.blocks, calibrateDetection({ rotDeg: s.rotDeg }));
+  const out = new Float32Array(pts.length);
+  pts.forEach(([x, y], i) => {
+    const c = cellAt(s.ti.map, x, y);
+    if (c < 0) return;
+    const r = s.blocks.recvOf[c];
+    let best = 0;
+    for (let k = det.start[r]; k < det.start[r + 1]; k++) best = Math.max(best, det.det[k]);
+    out[i] = best;
+  });
+  return out;
 }
 
 function alert(x: number, y: number, t: number, report: (f: number, l: string) => void): AlertResult {
@@ -416,7 +445,8 @@ async function searched(sector: SearchedSector, t0: number, t1: number, report: 
   const s = st();
   const windowMin = Math.max(15, Math.round((t1 - t0) * 60));
   const e = await ensembleAt(t1, (f, l) => report(f * 0.9, l), windowMin);
-  const r = searchUpdate({ sector, contrib: e.contrib, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map, pod: MISSIONS[s.mission].tuning.pod });
+  const det = receiverDetection(e.contrib, sourceSums(s.detailPost!, s.blocks), s.blocks, calibrateDetection({ rotDeg: s.rotDeg }));
+  const r = searchUpdate({ sector, det, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map, pod: MISSIONS[s.mission].tuning.pod });
   for (let i = 0; i < s.L.length; i++) s.L[i] *= r.factor[i];
   return { meanDet: r.meanDet, recheck: r.recheck, prob: recomputePosterior() };
 }
@@ -484,6 +514,15 @@ async function handle({ id, req }: Envelope): Promise<void> {
       case 'init':
         result = init(req.data);
         break;
+      case 'setSpread': {
+        const s = st();
+        if (s.rotDeg !== req.rotDeg) {
+          s.rotDeg = req.rotDeg;
+          s.last = null;
+        }
+        result = null;
+        break;
+      }
       case 'setWind': {
         const s = st();
         s.wind = req.wind;
@@ -499,6 +538,7 @@ async function handle({ id, req }: Envelope): Promise<void> {
         s.profile = req.profile;
         s.lkp = req.lkp;
         s.elapsedH = req.elapsedH;
+        s.travelDir = req.travelDir ?? null;
         recomputePrior();
         result = recomputePosterior();
         if (!s.warmed && pool && s.detailPost) {
@@ -520,6 +560,9 @@ async function handle({ id, req }: Envelope): Promise<void> {
         break;
       case 'deploy':
         result = await deploy(req.t, req.teams, !!req.hedge, report);
+        break;
+      case 'trial':
+        result = await trialDetection(req.pts, req.t, report);
         break;
       case 'alert':
         result = alert(req.x, req.y, req.t, report);

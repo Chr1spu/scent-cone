@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { HOTSPOTS, PROFILES, TURBULENCE } from '../config/modelParams';
 import { cellAt, cellCenterLocal, frameOf, gridMap, type GridMeta } from '../geo/grid';
 import { meanderCoef, stabilityClass, sunAt, type Weather } from './env';
-import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, sourceSums } from './hotspots';
+import { calibrateDetection } from './detection';
+import { deployableCells, greedyDeploy, sourceSums } from './hotspots';
 import { barrierFactor, buildStaticLayers, computeProbability, shareBeyond, travelFactor, travelLimitBinds, travelReachM } from './probability';
 import { blockIndex, createSim, makeStepEnv, runEnsemble, step } from './scent';
 import { buildTerrainInfo, LC, noseWindFactor, type TerrainInfo } from './terrainInfo';
@@ -176,8 +177,10 @@ describe('probability prior reproduces its profile statistics', () => {
         const c = i - r * n;
         if (Math.hypot((c - n / 2 + 0.5) * 60, (r - n / 2 + 0.5) * 60) <= PROFILES[id].medianM) inside += p[i];
       }
-      expect(inside).toBeGreaterThan(0.44);
-      expect(inside).toBeLessThan(0.56);
+      // the grid keeps only the part of the distribution inside it; renormalised, the median share is
+      // 0.5 / (1 − share beyond the grid) (wide profiles such as the hiker lose a visible tail)
+      const expected = 0.5 / (1 - shareBeyond(PROFILES[id], (n * 60) / 2));
+      expect(Math.abs(inside - expected)).toBeLessThan(0.05);
     });
   }
 });
@@ -186,8 +189,8 @@ describe('probability outside the modelled area', () => {
   it('is small for a young child and large for a hiker in a 12 km area', () => {
     expect(shareBeyond(PROFILES.child16, 6000)).toBeLessThan(0.001);
     const hiker = shareBeyond(PROFILES.hiker, 6000);
-    expect(hiker).toBeGreaterThan(0.1);
-    expect(hiker).toBeLessThan(0.2);
+    expect(hiker).toBeGreaterThan(0.2); // sourced spread (Australian study quartiles): a long tail
+    expect(hiker).toBeLessThan(0.35);
     // half the distribution lies beyond the median by definition (equal-area radius = median)
     expect(shareBeyond({ medianM: 1000, spread: 0.9 }, (1000 * Math.sqrt(Math.PI)) / 2)).toBeCloseTo(0.5, 5);
   });
@@ -247,9 +250,7 @@ describe('end-to-end sanity', () => {
     const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
     const deployable = deployableCells(ti, new Uint8Array(n * n), new Uint8Array(n * n));
     const { heat, contrib } = runEnsemble({ ti, field, place, weather: weatherWith(2, 0), prob, tEnd: 21, members: 2, particles: 3000, dt: 10, blocks });
-    const heatRecv = blockMean(heat, n, n, blocks);
-    const detRecv = detectability(heatRecv, detThresholds(heatRecv));
-    const [first] = greedyDeploy({ contrib: contrib!, blocks, detRecv, heat, q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 2 });
+    const [first] = greedyDeploy({ contrib: contrib!, blocks, curve: calibrateDetection(), windAt: () => ({ u: 0.5, v: 0 }), routeM: 0, heat, q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 2 });
     expect(first).toBeDefined();
     expect(first.x).toBeGreaterThan(-250); // east of the source = downwind
     expect(Math.abs(first.y)).toBeLessThan(150); // inside the plume

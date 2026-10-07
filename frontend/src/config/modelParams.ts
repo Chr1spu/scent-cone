@@ -9,11 +9,17 @@ export interface ProfileParams {
   label: string;
   /** median crow's-flight distance from LKP (m) */
   medianM: number;
-  /** log-normal spread (sigma of ln d) */
+  /** log-normal spread (sigma of ln d); from published quartiles, ln(Q75/Q25) / 1.349 */
   spread: number;
-  /** linear-feature attraction amplitude and length scale (m) */
+  /** linear-feature attraction amplitude and length scale (m), for profiles without `terrain` */
   featureA: number;
   featureL: number;
+  /**
+   * Evidence-based terrain model (TERRAIN below, from ISRID find locations): multipliers near
+   * trails, roads, streams, lakes, low and high points, within this track offset (m); slope neutral.
+   * Profiles without it use the simple featureA/featureL attraction and the slope penalty.
+   */
+  terrain?: { trackOffsetM: number };
   /** optional preference by land-cover class (1 water … 6 wetland); missing classes = 1 */
   landcoverWeight?: Partial<Record<number, number>>;
   /**
@@ -25,10 +31,14 @@ export interface ProfileParams {
 }
 
 export const PROFILES: Record<ProfileId, ProfileParams> = {
-  child16: { label: 'Child (1–6)', medianM: 300, spread: 0.9, featureA: 1, featureL: 150, maxSpeedKmh: 1.5, note: 'Lost Person Behavior, mountains' },
-  child712: { label: 'Child (7–12)', medianM: 1000, spread: 0.9, featureA: 1, featureL: 150, maxSpeedKmh: 3, note: 'placeholder, tune' },
-  hiker: { label: 'Hiker', medianM: 3100, spread: 0.8, featureA: 3, featureL: 150, maxSpeedKmh: 4, note: 'temperate mountains' },
-  dementia: { label: 'Person with dementia', medianM: 1100, spread: 0.9, featureA: 1, featureL: 150, maxSpeedKmh: 3, note: 'urban median; wilderness placeholder' },
+  // Distances: Twardy, Koester & Gatt (2006), Missing Person Behaviour: An Australian Study, Table 2.8
+  // (km from LKP; child 0.6/1.1/2.0/5.0, n=34; hiker 1.5/3.2/8.1/17.4, n=72) and ISRID dementia,
+  // temperate flat, n=175: 0.2/0.6/1.5/7.9 mi (NEWSAR SAR FTM Unit 3, 2020). Track offsets: ISRID
+  // 50% distance from linear features (hiker 100 m, dementia 15 m; children not given, 100 m used).
+  child16: { label: 'Child (1–6)', medianM: 300, spread: 0.9, featureA: 1, featureL: 150, maxSpeedKmh: 1.5, terrain: { trackOffsetM: 100 }, note: 'median as in the original spec (attributed to Lost Person Behavior, mountains); not verified against a source here' },
+  child712: { label: 'Child (7–12)', medianM: 1100, spread: 0.89, featureA: 1, featureL: 150, maxSpeedKmh: 3, terrain: { trackOffsetM: 100 }, note: 'Australian study, all children (n=34)' },
+  hiker: { label: 'Hiker', medianM: 3200, spread: 1.25, featureA: 3, featureL: 150, maxSpeedKmh: 4, terrain: { trackOffsetM: 100 }, note: 'Australian study (n=72); LPB temperate mountains median 3.1 km agrees' },
+  dementia: { label: 'Person with dementia', medianM: 970, spread: 1.5, featureA: 1, featureL: 150, maxSpeedKmh: 3, terrain: { trackOffsetM: 15 }, note: 'ISRID temperate flat (n=175)' },
   // lost pets: cats hide in cover close by (Huang et al. 2018: indoor-only cats median 39 m,
   // outdoor-access cats 315 m); dog figures are placeholders, dogs follow roads and trails
   catIndoor: { label: 'Cat (indoor-only)', medianM: 50, spread: 1.0, featureA: 0, featureL: 100, landcoverWeight: { 2: 0.5, 3: 1.6, 4: 1.3, 5: 1.4 }, note: 'Huang et al. 2018' },
@@ -44,6 +54,7 @@ export const PROBABILITY = {
   barrierFactor: 0.2,
   /** cost multiplier for crossing water / cliff / river cells in the detour pass */
   barrierCost: 25,
+  /** slope penalty for profiles without `terrain` (ISRID finds show no lower density on steep ground) */
   slopeScaleDeg: 25,
   brushRadiusM: 250,
   brushUp: 2,
@@ -57,6 +68,43 @@ export const PROBABILITY = {
    */
   travelMinH: 0.25,
   travelSoftness: 0.2,
+};
+
+/**
+ * Terrain multipliers (probability density relative to the area average) from Jacobs (2015),
+ * Terrain Based Probability Models for SAR, Table 1: ~2,200 ISRID find locations in the US,
+ * uninjured subjects. Applied within a profile's track offset of each feature (soft edge beyond);
+ * where several apply, the largest counts (they are not independent). Low/high points: the top and
+ * bottom 5% of topographic position in the area, with at least minReliefM of relief.
+ */
+export const TERRAIN = {
+  trail: 5,
+  road: 3,
+  stream: 2,
+  lake: 2,
+  trailStream: 7,
+  trailStreamM: 80,
+  low: 2,
+  high: 1.5,
+  lowPct: 0.95,
+  highPct: 0.05,
+  minReliefM: 5,
+};
+
+/**
+ * Direction of travel (ISRID dispersion angle, children 1–6 and dementia; NEWSAR SAR FTM Unit 3):
+ * 50% are found within ~30° of the intended direction, 75% within 66°, 95% within ~140°.
+ * Used for any profile when a direction is given; fades in over the first fadeM metres.
+ */
+export const DISPERSION = {
+  cdf: [
+    [0, 0],
+    [30, 0.5],
+    [66, 0.75],
+    [140, 0.95],
+    [180, 1],
+  ] as [number, number][],
+  fadeM: 150,
 };
 
 /** Fallback slope-wind model; mirrors backend/app/config.py SLOPE_WIND. */
@@ -76,6 +124,11 @@ export const SLOPE_WIND = {
 export const ENSEMBLE = {
   members: 6,
   rotDeg: 20,
+  /**
+   * Spread used instead when the forecast direction is uncertain (wind confidence fair/poor and no
+   * measured wind): docs/EVALUATION.md, a wider planning ensemble then covers more on average.
+   */
+  rotDegUncertain: 35,
   scaleMin: 0.7,
   scaleMax: 1.3,
   particlesPerMember: 4500,
@@ -177,9 +230,50 @@ export const HOTSPOTS = {
    * error of 30° or more this beats placing every team by scent; with a good forecast it costs ~1–2 points.
    */
   hedgeMinTeams: 3,
+  /**
+   * Each team works a route upwind from its start during its hour (dogs work into the wind toward
+   * the source; quartering across the wind, a team typically advances a few hundred metres to
+   * ~1 km an hour). Heuristic length; the route follows the local modelled wind.
+   */
+  routeM: 600,
+  routeStepM: 50,
+  /** below this wind (m/s) there is no upwind to follow; the route ends */
+  routeCalmWind: 0.2,
   suppressRadiusM: 300,
   maxSlopeDeg: 35,
   cliffBufferM: 20,
+};
+
+/**
+ * Wind confidence (models/windConfidence.ts): when to distrust the modelled direction. Heuristic
+ * thresholds: light winds meander (horizontal direction spread grows sharply below ~2 m/s), two
+ * independent models that disagree flag terrain the forecast handles badly, and a turning wind
+ * (evening downslope transition) makes a one-hour plan stale. Speeds are the 2 m model wind.
+ */
+export const WIND_CONFIDENCE = {
+  poorSpeed: 1.0,
+  fairSpeed: 2.0,
+  fairDisagreeDeg: 25,
+  poorDisagreeDeg: 45,
+  fairTurnDeg: 30,
+  poorTurnDeg: 60,
+  /** below this a model's direction is too weak to compare */
+  minSpeedForDirection: 0.3,
+  /** sample square half-width around the last known point (m) */
+  radiusM: 800,
+};
+
+/**
+ * Absolute detection (models/detection.ts): the distance straight downwind at which a dog detects
+ * one person half the time, in a steady neutral wind of refWind m/s (2 m model wind, class D,
+ * neutral scent decay). 0.9 at half that distance, 0.1 at twice it. Heuristic default: set it from
+ * your dog's record; air-scent dogs are often reported alerting from roughly 100 to 300+ m downwind.
+ */
+export const DETECTION = {
+  d50M: 200,
+  refWind: 2,
+  /** sources sampled by fewer particles than this share are treated as this likely (noise floor) */
+  minQ: 5e-4,
 };
 
 export const TRIANGULATION = {

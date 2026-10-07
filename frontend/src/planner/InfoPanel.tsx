@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { COLORS, LANDCOVER_CLASSES } from '../config/constants';
+import { DETECTION, HOTSPOTS } from '../config/modelParams';
 import { Link } from '../router';
 import { FEATURE_COLORS } from '../scene/FeatureLines';
 import { fmtTime } from '../state/controller';
@@ -134,8 +135,8 @@ function Plan() {
       <p className="text-xs text-ink-3">Planned for {fmtTime(time)}. Bars: scent score for each hour at that point.</p>
       {deployments.some((d) => d.kind === 'ground') && (
         <p className="rounded-sm border-l-2 border-amber bg-amber/10 px-2 py-1 text-xs leading-snug text-ink-2">
-          Wind not confirmed on site, so the last team searches the most likely ground instead of a scent point: if the real wind is
-          30° or more off the forecast, that hedge finds more. Enter the measured wind in section 5 and deploy again to place every team by scent.
+          The forecast wind direction is uncertain here (see section 5), so the last team searches the most likely ground instead of a scent point:
+          if the real wind is 30° or more off the forecast, that hedge finds more. Enter the measured wind and deploy again to place every team by scent.
         </p>
       )}
       {deployments.map((d) => {
@@ -158,7 +159,14 @@ function Plan() {
               </div>
             )}
             <div className="mt-1 text-ink-2">
-              Work toward <span className="num">{dir}°</span> ({compass(dir)}), into a <span className="num">{d.windSpeed.toFixed(1)} m/s</span> wind.
+              Work toward <span className="num">{dir}°</span> ({compass(dir)}), into a <span className="num">{d.windSpeed.toFixed(1)} m/s</span> wind
+              {d.route && d.route.length > 1 ? (
+                <>
+                  , about <span className="num">{Math.round(((d.route.length - 1) * HOTSPOTS.routeStepM) / 50) * 50} m</span> upwind (dashed route; follow the wind as it bends).
+                </>
+              ) : (
+                '.'
+              )}
             </div>
             <div className="mt-1.5 flex h-6 items-end gap-[2px]" aria-label="Scent score by hour">
               {d.windowScores.map((w) => (
@@ -235,8 +243,12 @@ function Notes() {
         <li>Wind: {windSource === 'windninja' ? 'WindNinja, terrain-adjusted, hourly' : 'forecast plus a slope-wind rule'}; scent moves with it at 0.6 m.</li>
         <li>Scent is released continuously, fades in heat and sun, lifts off sunny slopes, pools in calm hollows.</li>
         <li>Detectability is measured against neutral scent conditions.</li>
-        <li>Teams: 70% chance a dog finds what it covers (drifting scent, plus close range within 150 m of the start); 300 m apart.</li>
-        <li>Until the wind is confirmed on site, one of three or more teams covers the most likely ground as a hedge.</li>
+        <li>
+          Detection: a dog finds one person {DETECTION.d50M} m straight downwind half the time in a steady {DETECTION.refWind} m/s wind, more often closer; plus close range within{' '}
+          {HOTSPOTS.nearRadiusM} m of its route. Then a 70% chance the team acts on it.
+        </li>
+        <li>Each team works about {HOTSPOTS.routeM} m upwind from its start, following the modelled wind; starts are {HOTSPOTS.suppressRadiusM} m apart.</li>
+        <li>When the forecast direction is uncertain and the wind isn&apos;t measured, one of three or more teams covers the most likely ground as a hedge.</li>
       </ul>
       {sources.length > 0 && <p className="text-xs text-ink-3">Data: {sources.join(', ')}.</p>}
       <p>

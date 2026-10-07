@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { HABITAT_CLASSES, MISSIONS } from '../config/missions';
 import { PROFILES } from '../config/modelParams';
 import { shareBeyond } from '../models/probability';
-import { clearHides, finishPolygon, setHabitat, setProfile } from '../state/controller';
+import { clearHides, finishPolygon, fmtTime, scoreTrialGpx, setHabitat, setProfile, setTravelDir } from '../state/controller';
+import { DETECTION } from '../config/modelParams';
+import { download } from './exportPlan';
 import { useStore, type Tool } from '../state/store';
 import { Icon } from '../ui/icons';
 
@@ -32,6 +34,7 @@ export function SourceSection() {
   const draft = useStore((s) => s.searchDraft);
   const set = useStore((s) => s.set);
   const mode = useStore((s) => s.mode);
+  const travelDir = useStore((s) => s.travelDir);
   const ov = useStore((s) => s.bundle?.overview.meta);
   const areaKm = ov ? (Math.min(ov.cols, ov.rows) * ov.cellSize) / 1000 : 12;
   const outside = ov && PROFILES[profile] ? shareBeyond(PROFILES[profile], (areaKm * 1000) / 2) : 0;
@@ -47,6 +50,23 @@ export function SourceSection() {
               </button>
             ))}
           </div>
+        )}
+        {mission.source === 'lkp' && mission.id !== 'pet' && (
+          <label className="mt-1.5 flex items-center gap-1.5 text-[13px] text-ink-2" title="ISRID: three in four lost people are found within 66° of the direction they set off in">
+            Heading when last seen
+            <select
+              className="field !w-auto !py-0.5"
+              value={travelDir === null ? '' : String(travelDir)}
+              onChange={(e) => setTravelDir(e.target.value === '' ? null : Number(e.target.value))}
+            >
+              <option value="">unknown</option>
+              {['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map((c, k) => (
+                <option key={c} value={k * 45}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         <div className="mt-1.5 flex gap-1">
           <ToolButton tool="lkp" title={`Click the terrain to move: ${mission.lkpLabel.toLowerCase()}`}>
@@ -99,6 +119,7 @@ export function SourceSection() {
         <p className="mt-2 text-xs text-ink-2">
           {hides.length === 0 ? 'No hides yet.' : `${hides.length} hide${hides.length > 1 ? 's' : ''} placed (up to 3).`} Scrub the time bar to see where each scent cone goes.
         </p>
+        <TrialImport enabled={hides.length > 0} />
       </>
     );
   }
@@ -194,6 +215,74 @@ export function SourceSection() {
           ))}
         </select>
       </label>
+    </div>
+  );
+}
+
+/**
+ * Field validation for training runs: import the dog's GPS track with alert waypoints and see
+ * whether the model scored the alert spots higher than the rest of the track (docs/FIELD_TRIALS.md).
+ */
+function TrialImport({ enabled }: { enabled: boolean }) {
+  const trial = useStore((s) => s.trial);
+  const hides = useStore((s) => s.hides);
+  const bundle = useStore((s) => s.bundle);
+  const onsite = useStore((s) => s.onsiteWind);
+  const windSource = useStore((s) => s.windSource);
+  const onFile = async (f: File | undefined) => {
+    if (f) await scoreTrialGpx(await f.text(), f.name);
+  };
+  const saveRecord = () => {
+    if (!trial || !bundle) return;
+    const record = {
+      kind: 'scentline-trial',
+      version: 1,
+      saved: new Date().toISOString(),
+      area: bundle.config.name,
+      date: bundle.config.date,
+      crs: bundle.detail.meta.crs,
+      frame: bundle.frame,
+      hides,
+      windowEnd: trial.t,
+      wind: { source: windSource, measured: onsite },
+      detection: { d50M: DETECTION.d50M },
+      file: trial.file,
+      score: trial.score,
+      points: trial.points,
+    };
+    download(`scentline-trial-${bundle.config.date}-${trial.file.replace(/\.[^.]+$/, '')}.json`, 'application/json', JSON.stringify(record, null, 1));
+  };
+  return (
+    <div className="mt-2 border-t border-rule pt-2">
+      <p className="text-xs font-semibold text-ink">Score a training run</p>
+      <p className="mt-0.5 text-xs leading-snug text-ink-2">
+        Load the dog&apos;s GPS track (GPX) with a waypoint at each alert. Enter the measured wind first.
+      </p>
+      <label className={`btn btn-sm mt-1.5 w-full justify-center ${enabled ? '' : 'pointer-events-none opacity-50'}`}>
+        Import GPX
+        <input type="file" accept=".gpx,application/gpx+xml" className="hidden" disabled={!enabled} onChange={(e) => onFile(e.target.files?.[0])} />
+      </label>
+      {trial && (
+        <div className="mt-1.5 rounded-sm border border-rule bg-card p-2 text-xs leading-snug text-ink-2">
+          <div className="flex justify-between">
+            <span className="truncate">{trial.file}</span>
+            <span className="num">to {fmtTime(trial.t)}</span>
+          </div>
+          <div className="mt-1">
+            {trial.score.nAlerts} alert{trial.score.nAlerts === 1 ? '' : 's'}: model detection{' '}
+            <span className="num font-semibold text-ink">{trial.score.meanDetAlert.toFixed(2)}</span> at alerts vs{' '}
+            <span className="num">{trial.score.meanDetOther.toFixed(2)}</span> along the rest of the track.
+          </div>
+          {trial.score.auc !== null && (
+            <div className="mt-0.5">
+              AUC <span className="num font-semibold text-ink">{trial.score.auc.toFixed(2)}</span> (0.5 = chance, 1 = alerts always where the model expected).
+            </div>
+          )}
+          <button className="mt-1 text-ink-3 underline hover:text-ink" onClick={saveRecord}>
+            Save trial record (JSON)
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import type { TrialScore } from '../models/validation';
 import { create } from 'zustand';
 import type { ProfileId } from '../config/modelParams';
 import type { AreaBundle } from '../api/types';
@@ -69,6 +70,14 @@ export interface Toast {
   tone: 'info' | 'warn' | 'error' | 'success';
 }
 
+export interface TrialResult {
+  file: string;
+  /** end of the scored window (local hours) */
+  t: number;
+  score: Omit<TrialScore, 'points'>;
+  points: TrialScore['points'];
+}
+
 export interface OnsiteWind {
   hour: number;
   dir: number;
@@ -88,7 +97,7 @@ export interface State {
   error: string | null;
   /** what failed: the server (offer the demo) or the bundled data */
   errorKind: 'server' | 'data' | null;
-  mode: 'offline' | 'live';
+  mode: 'offline' | 'live' | 'saved';
   backend: { ok: boolean; windninja: boolean };
   bundle: AreaBundle | null;
   windSource: 'windninja' | 'fallback';
@@ -96,9 +105,13 @@ export interface State {
   windVersion: number;
   onsiteWind: OnsiteWind | null;
   profile: ProfileId;
+  /** intended direction of travel from the last known point (degrees from north), if known */
+  travelDir: number | null;
   mission: MissionId;
   /** training hides (local metres) */
   hides: [number, number][];
+  /** a scored training run (Training mission, imported GPX) */
+  trial: TrialResult | null;
   /** drawn search area (evidence, disaster) */
   area: SectorShape | null;
   habitat: HabitatSpec;
@@ -156,8 +169,10 @@ export const useStore = create<State>((set, get) => ({
   windVersion: 0,
   onsiteWind: null,
   profile: 'child712',
+  travelDir: null,
   mission: 'wilderness',
   hides: [],
+  trial: null,
   area: null,
   habitat: DEFAULT_HABITAT,
   missionVersion: 0,

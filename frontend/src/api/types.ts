@@ -46,7 +46,8 @@ export interface GeoFeature {
 }
 
 export interface AreaBundle {
-  mode: 'offline' | 'live';
+  /** offline = the bundled demo; saved = a live area stored on this device */
+  mode: 'offline' | 'live' | 'saved';
   config: AreaConfig;
   frame: Frame;
   overview: GridLevel;

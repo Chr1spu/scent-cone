@@ -71,6 +71,14 @@ function Team({ bundle, d }: { bundle: AreaBundle; d: DeploymentOut }) {
     return pts;
   }, [d]);
   const tipP = toScene(bundle, tip[0], tip[1], 6);
+  // the planned route, densified so it hugs the terrain
+  const routePts = useMemo(() => {
+    const r = d.route ?? [];
+    const pts: [number, number][] = [];
+    for (let i = 0; i + 1 < r.length; i++) for (let k = 0; k < 5; k++) pts.push([r[i][0] + ((r[i + 1][0] - r[i][0]) * k) / 5, r[i][1] + ((r[i + 1][1] - r[i][1]) * k) / 5]);
+    if (r.length > 1) pts.push(r[r.length - 1]);
+    return pts;
+  }, [d]);
   // cone axis is +Y; point it upwind (scene: east = +x, north = -z)
   const coneQuat = useMemo(
     () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(d.upwind[0], 0, -d.upwind[1]).normalize()),
@@ -89,6 +97,7 @@ function Team({ bundle, d }: { bundle: AreaBundle; d: DeploymentOut }) {
         </group>
       </group>
       <DrapedLine bundle={bundle} pts={arrowPts} color={color} lift={6} />
+      {routePts.length > 1 && <DrapedLine bundle={bundle} pts={routePts} color={color} lift={4} opacity={0.75} dashed />}
       <mesh position={tipP} quaternion={coneQuat} renderOrder={9}>
         <coneGeometry args={[12, 34, 12]} />
         <meshBasicMaterial color={color} depthTest={false} transparent opacity={0.95} />

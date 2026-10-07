@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HOTSPOTS, PROFILES, SCENT, TURBULENCE } from '../config/modelParams';
 import { bilinear, cellAt, frameOf, gridMap, sampleLocal, type GridMeta } from '../geo/grid';
 import { decayTau, type Weather } from './env';
-import { deployableCells, detThresholds, detectability, blockMean, greedyDeploy, nearSources, sourceSums, teamCoverage } from './hotspots';
+import { calibrateDetection, type ReceiverDetection } from './detection';
+import { deployableCells, greedyDeploy, nearSources, routeCoverage, sourceSums, traceRoute } from './hotspots';
 import { buildStaticLayers, barrierFactor, computeProbability, resampleToDetail } from './probability';
 import { backtrace, posterior } from './triangulation';
 import { blockIndex, createSim, makeStepEnv, runEnsemble, step, type StepEnv } from './scent';
@@ -234,22 +235,64 @@ describe('greedy deployment', () => {
     const prob = new Float32Array(n * n).fill(1 / (n * n));
     const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
     const { heat, contrib } = runEnsemble({ ti, field, place, weather, prob, tEnd: 21, members: 2, particles: 3000, dt: 10, blocks });
-    const heatRecv = blockMean(heat, n, n, blocks);
-    const detRecv = detectability(heatRecv, detThresholds(heatRecv));
-    const deps = greedyDeploy({ contrib: contrib!, blocks, detRecv, heat, q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 4 });
+    const windAt = () => ({ u: 0.4, v: 0.1 });
+    const deps = greedyDeploy({ contrib: contrib!, blocks, curve: calibrateDetection(), windAt, heat, q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 4 });
     expect(deps.length).toBeGreaterThan(0);
     for (const d of deps) expect(deployable[d.cell]).toBe(1);
     for (let i = 0; i < deps.length; i++)
       for (let j = i + 1; j < deps.length; j++) expect(Math.hypot(deps[i].x - deps[j].x, deps[i].y - deps[j].y)).toBeGreaterThan(HOTSPOTS.suppressRadiusM - 60);
+    // routes stay on usable ground
+    for (const d of deps) for (const [x, y] of d.route) expect(deployable[cellAt(ti.map, x, y)]).toBe(1);
+  });
+});
+
+/** Receiver detection from a list of [receiver, source, detection]. */
+function detOf(nRecv: number, entries: [number, number, number][]): ReceiverDetection {
+  const start = new Int32Array(nRecv + 1);
+  const sorted = [...entries].sort((a, b) => a[0] - b[0]);
+  for (const [r] of sorted) start[r + 1]++;
+  for (let r = 0; r < nRecv; r++) start[r + 1] += start[r];
+  return { start, src: Int32Array.from(sorted.map((e) => e[1])), det: Float32Array.from(sorted.map((e) => e[2])) };
+}
+
+describe('team routes', () => {
+  const n = 100;
+  const ti = flatTerrain(n, 10);
+  const all = new Uint8Array(n * n).fill(1);
+  it('work upwind from the start for the route length', () => {
+    const r = traceRoute(ti.map, all, 0, 0, () => ({ u: 2, v: 0 }), 300); // wind toward the east: upwind is west
+    expect(r.length).toBe(1 + 300 / HOTSPOTS.routeStepM);
+    expect(r[r.length - 1][0]).toBeCloseTo(-300, 6);
+    expect(r[r.length - 1][1]).toBeCloseTo(0, 6);
+  });
+  it('stop at ground a team cannot use, and in calm air', () => {
+    const blocked = all.slice();
+    for (let row = 0; row < n; row++) blocked[row * n + 35] = 0; // a wall ~150 m west of the centre
+    const r = traceRoute(ti.map, blocked, 0, 0, () => ({ u: 2, v: 0 }), 600);
+    expect(r[r.length - 1][0]).toBeGreaterThan(-150);
+    expect(traceRoute(ti.map, all, 0, 0, () => ({ u: 0.05, v: 0 }), 600).length).toBe(1);
+  });
+  it('cover the best detection anywhere along the route, plus close range', () => {
+    const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
+    const r0 = blocks.recvOf[cellAt(ti.map, 0, 0)];
+    const r1 = blocks.recvOf[cellAt(ti.map, -200, 0)];
+    const det = detOf(blocks.nRecv, [
+      [r0, 1, 0.2],
+      [r1, 1, 0.7],
+      [r1, 2, 0.3],
+    ]);
+    const short = routeCoverage([[0, 0]], { blocks, map: ti.map, det, nearRadiusM: 0 });
+    const long = routeCoverage(traceRoute(ti.map, all, 0, 0, () => ({ u: 2, v: 0 }), 300), { blocks, map: ti.map, det, nearRadiusM: 0 });
+    const asMap = (c: { src: Int32Array; d: Float32Array }) => new Map([...c.src].map((s, i) => [s, c.d[i]]));
+    expect(asMap(short).get(1)).toBeCloseTo(0.2, 6);
+    expect(asMap(long).get(1)).toBeCloseTo(0.7, 6);
+    expect(asMap(long).get(2)).toBeCloseTo(0.3, 6);
+    const withNear = asMap(routeCoverage([[0, 0]], { blocks, map: ti.map, det, nearRadiusM: 150, nearDet: 0.6 }));
+    expect(withNear.get(blocks.srcOf[cellAt(ti.map, 0, 0)])).toBeCloseTo(0.6, 6);
   });
 });
 
 describe('close-range detection', () => {
-  it('takes the stronger of scent and close-range detection per source', () => {
-    const m = teamCoverage([1, 2], 0.3, [2, 3], 0.6);
-    expect([...m.entries()].sort()).toEqual([[1, 0.3], [2, 0.6], [3, 0.6]]);
-    expect([...teamCoverage([1], 0, [], 0.6)]).toEqual([]);
-  });
   it('finds source blocks around a receiver', () => {
     const n = 100;
     const ti = flatTerrain(n, 10);
@@ -269,7 +312,7 @@ describe('close-range detection', () => {
     prob[70 * n + 30] = 1; // all probability at col 30, row 70
     const deployable = new Uint8Array(n * n).fill(1);
     const none = (len: number) => new Float32Array(len);
-    const common = { contrib: none(blocks.nRecv * blocks.nSrc), blocks, detRecv: none(blocks.nRecv), heat: none(n * n), q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 2 };
+    const common = { contrib: none(blocks.nRecv * blocks.nSrc), blocks, curve: calibrateDetection(), heat: none(n * n), q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 2 };
     const deps = greedyDeploy(common);
     expect(deps.length).toBe(1); // the second team would cover nothing new
     const d = deps[0];
@@ -286,11 +329,8 @@ describe('close-range detection', () => {
     prob[70 * n + 30] = 1;
     const srcA = blocks.srcOf[70 * n + 30];
     const far = blocks.recvOf[10 * n + 90]; // ~860 m away, downwind in this made-up world
-    const contrib = new Float32Array(blocks.nRecv * blocks.nSrc);
-    contrib[far * blocks.nSrc + srcA] = 1;
-    const detRecv = new Float32Array(blocks.nRecv);
-    detRecv[far] = 1;
-    const deps = greedyDeploy({ contrib, blocks, detRecv, heat: new Float32Array(n * n), q: sourceSums(prob, blocks), deployable: new Uint8Array(n * n).fill(1), map: ti.map, teams: 2, prob, scentTeams: 1 });
+    const det = detOf(blocks.nRecv, [[far, srcA, 1]]);
+    const deps = greedyDeploy({ contrib: new Float32Array(0), det, curve: calibrateDetection(), blocks, heat: new Float32Array(n * n), q: sourceSums(prob, blocks), deployable: new Uint8Array(n * n).fill(1), map: ti.map, teams: 2, prob, scentTeams: 1 });
     expect(deps.map((d) => d.kind)).toEqual(['scent', 'ground']);
     expect(deps[0].recv).toBe(far);
     const [sx, sy] = [(30 - ti.map.ox) / ti.map.inv, -(70 - ti.map.oy) / ti.map.inv];

@@ -113,6 +113,7 @@ export async function parallelEnsemble(pool: EnsemblePool | null, inp: EnsembleI
         windowMin: inp.windowMin,
         seed: inp.seed ?? 1234,
         neutral: inp.neutral,
+        rotDeg: inp.rotDeg,
         withBlocks: !!inp.blocks,
       })
       .then((r) => {

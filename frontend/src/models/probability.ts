@@ -2,7 +2,7 @@
  * Probability map (CLAUDE.md §8.1): where the person might be, per overview cell, summing to 1.
  * distance prior (log-normal) × linear features × barriers × slope × (water = 0), plus brush edits.
  */
-import { PROBABILITY, type ProfileParams } from '../config/modelParams';
+import { DISPERSION, PROBABILITY, TERRAIN, type ProfileParams } from '../config/modelParams';
 import { boxBlur, cellAt, cellCenterLocal, slopeDegrees, type GridMap, type GridMeta } from '../geo/grid';
 import { LC } from './terrainInfo';
 
@@ -20,6 +20,13 @@ export interface Feature2D {
 export interface StaticLayers {
   /** distance (m) to nearest trail/road/stream */
   featureDist: Float32Array;
+  /** distance (m) to the nearest feature of each kind (terrain model) */
+  trailDist: Float32Array;
+  roadDist: Float32Array;
+  streamDist: Float32Array;
+  lakeDist: Float32Array;
+  /** percentile rank (0–1) of tpi in the area: high = low-lying, low = high points */
+  tpiPct: Float32Array;
   /** water cells (land cover water, lakes, rivers) */
   water: Uint8Array;
   /** cells that are costly to cross (water or cliff) */
@@ -130,7 +137,73 @@ export function buildStaticLayers(meta: GridMeta, m: GridMap, elev: Float32Array
   const mean = boxBlur(boxBlur(elev, meta.cols, meta.rows, radius), meta.cols, meta.rows, radius);
   const tpi = new Float32Array(n);
   for (let i = 0; i < n; i++) tpi[i] = mean[i] - elev[i];
-  return { featureDist, water, barrier, slopeDeg: slopeDegrees(elev, meta.cols, meta.rows, meta.cellSize), tpi, landcover };
+  const distTo = (kinds: FeatureKind[]) => {
+    const g = new Uint8Array(n);
+    rasterizeLines(feats.filter((f) => kinds.includes(f.kind) && !f.polygon), m, g);
+    return distanceTransform(g, meta.cols, meta.rows, meta.cellSize);
+  };
+  const lakes = new Uint8Array(n);
+  rasterizePolygons(feats.filter((f) => f.kind === 'lake' && f.polygon), m, lakes);
+  for (let i = 0; i < n; i++) if (landcover[i] === LC.water) lakes[i] = 1;
+  return {
+    featureDist,
+    trailDist: distTo(['trail']),
+    roadDist: distTo(['road']),
+    streamDist: distTo(['stream', 'river']),
+    lakeDist: distanceTransform(lakes, meta.cols, meta.rows, meta.cellSize),
+    tpiPct: percentRank(tpi),
+    water,
+    barrier,
+    slopeDeg: slopeDegrees(elev, meta.cols, meta.rows, meta.cellSize),
+    tpi,
+    landcover,
+  };
+}
+
+/** Percentile rank (0–1) of every value; ties share their lowest rank. */
+export function percentRank(a: Float32Array): Float32Array {
+  const idx = Array.from(a.keys()).sort((x, y) => a[x] - a[y]);
+  const out = new Float32Array(a.length);
+  const n = Math.max(1, a.length - 1);
+  let k = 0;
+  while (k < idx.length) {
+    let j = k;
+    while (j + 1 < idx.length && a[idx[j + 1]] === a[idx[k]]) j++;
+    for (let q = k; q <= j; q++) out[idx[q]] = k / n;
+    k = j + 1;
+  }
+  return out;
+}
+
+/** Soft track-offset membership: 1 within the offset, decaying over one more offset beyond it. */
+function near(d: number, w: number): number {
+  return d <= w ? 1 : Math.exp(-(d - w) / Math.max(w, 1));
+}
+
+/** Terrain multiplier at cell i (TERRAIN, Jacobs 2015): the largest feature effect that applies. */
+export function terrainFactor(layers: StaticLayers, i: number, trackOffsetM: number, cellSize: number): number {
+  // a cell's own feature is up to half a cell away
+  const w = Math.max(trackOffsetM, cellSize / 2);
+  const T = TERRAIN;
+  const gT = near(layers.trailDist[i], w);
+  const gS = near(layers.streamDist[i], w);
+  let f = 1 + (T.trail - 1) * gT;
+  f = Math.max(f, 1 + (T.road - 1) * near(layers.roadDist[i], w));
+  f = Math.max(f, 1 + (T.stream - 1) * gS);
+  if (!layers.water[i]) f = Math.max(f, 1 + (T.lake - 1) * near(layers.lakeDist[i], w));
+  const wi = Math.max(T.trailStreamM, cellSize / 2);
+  f = Math.max(f, 1 + (T.trailStream - 1) * near(layers.trailDist[i], wi) * near(layers.streamDist[i], wi));
+  if (layers.tpiPct[i] >= T.lowPct && layers.tpi[i] >= T.minReliefM) f = Math.max(f, T.low);
+  if (layers.tpiPct[i] <= T.highPct && layers.tpi[i] <= -T.minReliefM) f = Math.max(f, T.high);
+  return f;
+}
+
+/** Relative weight (mean 1 over 0–180°) of a find at angle `diff` (deg) off the direction of travel. */
+export function dispersionWeight(diffDeg: number): number {
+  const c = DISPERSION.cdf;
+  const d = Math.min(180, Math.abs(diffDeg));
+  for (let k = 1; k < c.length; k++) if (d <= c[k][0]) return ((c[k][1] - c[k - 1][1]) / (c[k][0] - c[k - 1][0])) * 180;
+  return 1;
 }
 
 // ---------------------------------------------------------------- barriers (cost-distance)
@@ -263,6 +336,8 @@ export interface ProbabilityInput {
   lowGroundBias?: number;
   /** hours since the person went missing (time-since-missing limit); omitted = no limit */
   elapsedH?: number;
+  /** intended direction of travel (degrees from north), if known */
+  travelDirDeg?: number | null;
 }
 
 /** Furthest straight-line distance (m) the profile could plausibly have covered; Infinity = no limit. */
@@ -295,9 +370,18 @@ export function computeProbability(inp: ProbabilityInput): Float32Array {
     const d = Math.max(Math.hypot(x - lkp[0], y - lkp[1]), meta.cellSize);
     let w = logNormalPdf(d / 1000, profile.medianM / 1000, profile.spread) / (2 * Math.PI * d);
     w *= travelFactor(d, reach);
-    w *= 1 + profile.featureA * Math.exp(-layers.featureDist[i] / profile.featureL);
+    if (profile.terrain) w *= terrainFactor(layers, i, profile.terrain.trackOffsetM, meta.cellSize);
+    else {
+      w *= 1 + profile.featureA * Math.exp(-layers.featureDist[i] / profile.featureL);
+      w *= Math.exp(-layers.slopeDeg[i] / PROBABILITY.slopeScaleDeg);
+    }
     w *= barrier[i];
-    w *= Math.exp(-layers.slopeDeg[i] / PROBABILITY.slopeScaleDeg);
+    if (inp.travelDirDeg !== undefined && inp.travelDirDeg !== null) {
+      const bearing = (Math.atan2(x - lkp[0], y - lkp[1]) * 180) / Math.PI;
+      const diff = ((bearing - inp.travelDirDeg + 540) % 360) - 180;
+      const fade = Math.min(1, d / DISPERSION.fadeM);
+      w *= 1 + (dispersionWeight(diff) - 1) * fade;
+    }
     if (edits) w *= edits[i];
     if (lcw) w *= lcw[layers.landcover[i]] ?? 1;
     if (bias) w *= Math.exp(bias * Math.max(-1.5, Math.min(1.5, layers.tpi[i] / 40)));

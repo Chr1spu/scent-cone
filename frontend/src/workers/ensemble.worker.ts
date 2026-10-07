@@ -19,6 +19,7 @@ export interface EnsembleTask {
   windowMin?: number;
   seed: number;
   neutral?: boolean;
+  rotDeg?: number;
   withBlocks: boolean;
 }
 
@@ -72,6 +73,7 @@ ctx.onmessage = (ev: MessageEvent<HelperMsg>) => {
       windowMin: t.windowMin,
       seed: t.seed,
       neutral: t.neutral,
+      rotDeg: t.rotDeg,
       blocks: t.withBlocks ? (blocks ?? undefined) : undefined,
     });
     const transfer: Transferable[] = [r.heat.buffer];

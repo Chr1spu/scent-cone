@@ -1,9 +1,11 @@
 /**
  * Hotspot scoring and greedy dog-team deployment (CLAUDE.md §8.4).
- * Works on receiver blocks (50 m) and source blocks (100 m) from contribution tracking.
+ * Works on receiver blocks (50 m) and source blocks (100 m) from contribution tracking, with
+ * absolute single-person detection (models/detection.ts) along each team's upwind route.
  */
 import { HOTSPOTS } from '../config/modelParams';
-import { smoothstep, type GridMap } from '../geo/grid';
+import { cellAt, smoothstep, type GridMap } from '../geo/grid';
+import { receiverDetection, type DetectionCurve, type ReceiverDetection } from './detection';
 import { distanceTransform } from './probability';
 import type { BlockIndex } from './scent';
 import { LC, type TerrainInfo } from './terrainInfo';
@@ -91,46 +93,47 @@ export interface Deployment {
   team: number;
   /** receiver block */
   recv: number;
-  /** detail cell where the team stands */
+  /** detail cell where the team starts */
   cell: number;
   x: number;
   y: number;
   score: number;
-  /** share of segment probability this team would detect (scent reaching it × detectability, plus close range) */
+  /** share of segment probability this team would detect along its route */
   coveredProb: number;
   coveredSources: number[];
   /** placed by drifting scent, or (hedge) on the most likely ground by close range alone */
   kind: 'scent' | 'ground';
+  /** the route the team works: upwind from the start (local metres, first point = start) */
+  route: [number, number][];
 }
 
-export interface DeployInput {
-  contrib: Float32Array;
-  blocks: BlockIndex;
-  /** receiver-level detectability */
-  detRecv: Float32Array;
-  /** detail-level heat (for choosing the best cell inside a block) */
-  heat: Float32Array;
-  /** detail-level probability (for placing a ground team inside its block) */
-  prob?: Float32Array;
-  /** source-block probability (sums to ~1) */
-  q: Float32Array;
-  deployable: Uint8Array;
-  map: GridMap;
-  teams: number;
-  /** chance a dog detects what it covers (default HOTSPOTS.dogPOD) */
-  pod?: number;
-  /** minimum spacing between teams in metres (default HOTSPOTS.suppressRadiusM) */
-  spacingM?: number;
-  /** a team must intercept at least this share of the probability to be placed */
-  minCover?: number;
-  /** close-range search radius around the start (m) and its detectability; 0 turns it off */
-  nearRadiusM?: number;
-  nearDet?: number;
-  /**
-   * Place only this many teams by scent; the rest go on the most likely ground by close range
-   * alone (a hedge when the wind direction is uncertain). Default: all teams by scent.
-   */
-  scentTeams?: number;
+/** Local wind (m/s, east and north) at a point, at the planning time. */
+export type WindAt = (x: number, y: number) => { u: number; v: number };
+
+/**
+ * The route a team works in its search window: from the start, upwind into the local wind (dogs
+ * work toward the source), in steps of HOTSPOTS.routeStepM. Stops early on ground a team can't use,
+ * at the grid edge, or in calm air (where there is no "upwind" to follow).
+ */
+export function traceRoute(map: GridMap, deployable: Uint8Array, x0: number, y0: number, windAt: WindAt | undefined, lengthM: number): [number, number][] {
+  const pts: [number, number][] = [[x0, y0]];
+  if (!windAt || lengthM <= 0) return pts;
+  const step = HOTSPOTS.routeStepM;
+  let x = x0;
+  let y = y0;
+  for (let d = step; d <= lengthM + 1e-6; d += step) {
+    const w = windAt(x, y);
+    const s = Math.hypot(w.u, w.v);
+    if (s < HOTSPOTS.routeCalmWind) break;
+    const nx = x - (w.u / s) * step;
+    const ny = y - (w.v / s) * step;
+    const c = cellAt(map, nx, ny);
+    if (c < 0 || !deployable[c]) break;
+    x = nx;
+    y = ny;
+    pts.push([x, y]);
+  }
+  return pts;
 }
 
 /** Source blocks whose centre lies within `radiusM` of receiver r's centre (ground the team works itself). */
@@ -155,42 +158,117 @@ export function nearSources(b: BlockIndex, map: GridMap, r: number, radiusM: num
   return out;
 }
 
-/**
- * What a team at receiver r detects, per source block: `det` (scent detectability at r) for sources
- * whose scent reaches r, and at least `nearDet` for sources on the ground the team works around its
- * start (a dog finds a person it passes close to even when the drifted scent is weak).
- */
-export function teamCoverage(contribList: number[], det: number, near: number[], nearDet: number): Map<number, number> {
-  const m = new Map<number, number>();
-  if (det > 0) for (const s of contribList) m.set(s, det);
-  for (const s of near) m.set(s, Math.max(m.get(s) ?? 0, nearDet));
-  return m;
+export interface CoverageOptions {
+  blocks: BlockIndex;
+  map: GridMap;
+  /** absolute single-person detection per receiver; null = close range only */
+  det: ReceiverDetection | null;
+  nearRadiusM?: number;
+  nearDet?: number;
 }
 
-/** Sources contributing at receiver r: ≥ share of its scent, top-N by strength. */
-export function contributingSources(contrib: Float32Array, nSrc: number, r: number): number[] {
-  const off = r * nSrc;
-  let total = 0;
-  for (let s = 0; s < nSrc; s++) total += contrib[off + s];
-  if (total <= 0) return [];
-  const thr = total * HOTSPOTS.contribShare;
-  const list: number[] = [];
-  for (let s = 0; s < nSrc; s++) if (contrib[off + s] >= thr) list.push(s);
-  if (list.length > HOTSPOTS.maxSourcesPerRecv) {
-    list.sort((a, b) => contrib[off + b] - contrib[off + a]);
-    list.length = HOTSPOTS.maxSourcesPerRecv;
+/** Sparse coverage: detection probability per source block. */
+export interface Coverage {
+  src: Int32Array;
+  d: Float32Array;
+}
+
+const scratchFor = new WeakMap<BlockIndex, { val: Float32Array; seen: Uint8Array }>();
+
+/**
+ * What a team detects along its route, per source block: the best scent detection at any
+ * receiver it passes, and at least `nearDet` for sources within `nearRadiusM` of the route
+ * (a dog finds a person it passes close to even when the drifted scent is weak).
+ */
+export function routeCoverage(route: [number, number][], o: CoverageOptions): Coverage {
+  const b = o.blocks;
+  let sc = scratchFor.get(b);
+  if (!sc) {
+    sc = { val: new Float32Array(b.nSrc), seen: new Uint8Array(b.nRecv) };
+    scratchFor.set(b, sc);
   }
-  return list;
+  const { val, seen } = sc;
+  const nearR = o.nearRadiusM ?? HOTSPOTS.nearRadiusM;
+  const nearDet = o.nearDet ?? HOTSPOTS.nearDet;
+  const touched: number[] = [];
+  const recvs: number[] = [];
+  for (const [x, y] of route) {
+    const c = cellAt(o.map, x, y);
+    if (c < 0) continue;
+    const r = b.recvOf[c];
+    if (seen[r]) continue;
+    seen[r] = 1;
+    recvs.push(r);
+  }
+  const bump = (s: number, d: number) => {
+    if (val[s] === 0) touched.push(s);
+    if (d > val[s]) val[s] = d;
+  };
+  for (const r of recvs) {
+    if (o.det) for (let k = o.det.start[r]; k < o.det.start[r + 1]; k++) bump(o.det.src[k], o.det.det[k]);
+    if (nearR > 0 && nearDet > 0) for (const s of nearSources(b, o.map, r, nearR)) bump(s, nearDet);
+  }
+  const out: Coverage = { src: new Int32Array(touched.length), d: new Float32Array(touched.length) };
+  touched.forEach((s, i) => {
+    out.src[i] = s;
+    out.d[i] = val[s];
+    val[s] = 0;
+  });
+  for (const r of recvs) seen[r] = 0;
+  return out;
+}
+
+export interface DeployInput {
+  contrib: Float32Array;
+  blocks: BlockIndex;
+  /** source-block probability (sums to ~1) */
+  q: Float32Array;
+  /** detail-level heat (picks the start cell inside a block) */
+  heat: Float32Array;
+  /** detail-level probability (start cell of a ground team) */
+  prob?: Float32Array;
+  deployable: Uint8Array;
+  map: GridMap;
+  teams: number;
+  /** single-person detection curve (models/detection.ts) */
+  curve: DetectionCurve;
+  /** precomputed receiver detection (else built from contrib, q and curve) */
+  det?: ReceiverDetection;
+  /** local wind for each team's upwind route; omitted = teams stay at their start */
+  windAt?: WindAt;
+  /** route length (m), default HOTSPOTS.routeM */
+  routeM?: number;
+  /** chance a dog detects what it covers (default HOTSPOTS.dogPOD) */
+  pod?: number;
+  /** minimum spacing between team starts (m) */
+  spacingM?: number;
+  /** a team must cover at least this share of the probability to be placed */
+  minCover?: number;
+  nearRadiusM?: number;
+  nearDet?: number;
+  /**
+   * Place only this many teams by scent; the rest go on the most likely ground by close range
+   * alone (a hedge when the wind direction is uncertain). Default: all teams by scent.
+   */
+  scentTeams?: number;
 }
 
 export function greedyDeploy(inp: DeployInput): Deployment[] {
-  const { contrib, blocks: b, detRecv, q, deployable, map, heat } = inp;
+  const { blocks: b, q, deployable, map, heat } = inp;
   const { nRecv, nSrc, recvCols } = b;
   const recvRows = nRecv / recvCols;
   const cols = map.cols;
-  // receiver deployability + best cell per block
+  const routeM = inp.routeM ?? HOTSPOTS.routeM;
+  const det = inp.det ?? receiverDetection(inp.contrib, q, b, inp.curve);
+  const xy = (cell: number): [number, number] => {
+    const row = Math.floor(cell / cols);
+    return [(cell - row * cols - map.ox) / map.inv, -(row - map.oy) / map.inv];
+  };
+  // start cell per block: strongest scent (scent teams) and most likely ground (ground teams)
   const bestCell = new Int32Array(nRecv).fill(-1);
   const bestHeat = new Float32Array(nRecv).fill(-1);
+  const groundCell = new Int32Array(nRecv).fill(-1);
+  const groundP = new Float32Array(nRecv).fill(-1);
   for (let i = 0; i < deployable.length; i++) {
     if (!deployable[i]) continue;
     const r = b.recvOf[i];
@@ -198,22 +276,33 @@ export function greedyDeploy(inp: DeployInput): Deployment[] {
       bestHeat[r] = heat[i];
       bestCell[r] = i;
     }
-  }
-  const nearR = inp.nearRadiusM ?? HOTSPOTS.nearRadiusM;
-  const nearDet = inp.nearDet ?? HOTSPOTS.nearDet;
-  const cover: [number, number][][] = new Array(nRecv);
-  const groundCover: [number, number][][] = new Array(nRecv);
-  for (let r = 0; r < nRecv; r++) {
-    if (bestCell[r] < 0) {
-      cover[r] = groundCover[r] = [];
-      continue;
+    const p = inp.prob ? inp.prob[i] : heat[i];
+    if (p > groundP[r]) {
+      groundP[r] = p;
+      groundCell[r] = i;
     }
-    const scent = detRecv[r] > 0 ? contributingSources(contrib, nSrc, r) : [];
-    const near = nearR > 0 && nearDet > 0 ? nearSources(b, map, r, nearR) : [];
-    cover[r] = [...teamCoverage(scent, detRecv[r], near, nearDet)];
-    groundCover[r] = [...teamCoverage([], 0, near, nearDet)];
   }
   const scentTeams = inp.scentTeams ?? inp.teams;
+  const opts: CoverageOptions = { blocks: b, map, det, nearRadiusM: inp.nearRadiusM, nearDet: inp.nearDet };
+  const groundOpts: CoverageOptions = { ...opts, det: null };
+  const empty: Coverage = { src: new Int32Array(0), d: new Float32Array(0) };
+  const routes: [number, number][][] = new Array(nRecv);
+  const cover: Coverage[] = new Array(nRecv).fill(empty);
+  const groundRoutes: [number, number][][] = new Array(nRecv);
+  const groundCover: Coverage[] = new Array(nRecv).fill(empty);
+  for (let r = 0; r < nRecv; r++) {
+    if (bestCell[r] < 0) continue;
+    if (scentTeams > 0) {
+      const [x, y] = xy(bestCell[r]);
+      routes[r] = traceRoute(map, deployable, x, y, inp.windAt, routeM);
+      cover[r] = routeCoverage(routes[r], opts);
+    }
+    if (scentTeams < inp.teams) {
+      const [x, y] = xy(groundCell[r]);
+      groundRoutes[r] = traceRoute(map, deployable, x, y, inp.windAt, routeM);
+      groundCover[r] = routeCoverage(groundRoutes[r], groundOpts);
+    }
+  }
   const w = new Float32Array(nSrc).fill(1);
   // ground (hedge) teams discount only what other ground teams cover: the hedge exists for when the
   // scent teams' coverage is wrong, so it must not lean on it
@@ -223,16 +312,18 @@ export function greedyDeploy(inp: DeployInput): Deployment[] {
   const smooth = new Float32Array(nRecv);
   const out: Deployment[] = [];
   const blockM = b.recvBlock / map.inv;
+  const pod = inp.pod ?? HOTSPOTS.dogPOD;
   for (let team = 0; team < inp.teams; team++) {
     const kind = team < scentTeams ? 'scent' : 'ground';
     const cov = kind === 'scent' ? cover : groundCover;
     const wk = kind === 'scent' ? w : wGround;
     for (let r = 0; r < nRecv; r++) {
+      const c = cov[r];
       let s = 0;
-      for (const [src, d] of cov[r]) s += q[src] * wk[src] * d;
+      for (let k = 0; k < c.src.length; k++) s += q[c.src[k]] * wk[c.src[k]] * c.d[k];
       raw[r] = s;
     }
-    // ~30 m smoothing kernel at 50 m blocks: light [1 2 1] blur
+    // light [1 2 1] blur at 50 m blocks (~30 m kernel): prefer starts in good neighbourhoods
     for (let rr = 0; rr < recvRows; rr++)
       for (let rc = 0; rc < recvCols; rc++) {
         let acc = 0;
@@ -259,24 +350,27 @@ export function greedyDeploy(inp: DeployInput): Deployment[] {
     }
     // stop rather than place a team that would cover (almost) nothing
     if (best < 0 || raw[best] < (inp.minCover ?? 0.01)) break;
-    // on the ground, stand on the most likely cell of the block rather than the strongest scent
-    let cell = bestCell[best];
-    if (kind === 'ground' && inp.prob) {
-      let bp = -1;
-      for (let i = 0; i < b.recvOf.length; i++) if (b.recvOf[i] === best && deployable[i] && inp.prob[i] > bp) {
-        bp = inp.prob[i];
-        cell = i;
-      }
+    const cell = kind === 'scent' ? bestCell[best] : groundCell[best];
+    const [x, y] = xy(cell);
+    const c = cov[best];
+    out.push({
+      team: team + 1,
+      recv: best,
+      cell,
+      x,
+      y,
+      score: bestScore,
+      coveredProb: raw[best],
+      coveredSources: Array.from(c.src),
+      kind,
+      route: (kind === 'scent' ? routes : groundRoutes)[best] ?? [[x, y]],
+    });
+    for (let k = 0; k < c.src.length; k++) {
+      const f = 1 - pod * c.d[k];
+      w[c.src[k]] *= f;
+      if (kind === 'ground') wGround[c.src[k]] *= f;
     }
-    const row = Math.floor(cell / cols);
-    const col = cell - row * cols;
-    const x = (col - map.ox) / map.inv;
-    const y = -(row - map.oy) / map.inv;
-    out.push({ team: team + 1, recv: best, cell, x, y, score: bestScore, coveredProb: raw[best], coveredSources: cov[best].map(([src]) => src), kind });
-    const pod = inp.pod ?? HOTSPOTS.dogPOD;
-    for (const [src, d] of cov[best]) w[src] *= 1 - pod * d;
-    if (kind === 'ground') for (const [src, d] of cov[best]) wGround[src] *= 1 - pod * d;
-    // suppress receivers within 300 m
+    // suppress starts within the spacing
     const br = Math.floor(best / recvCols);
     const bc = best - br * recvCols;
     const spacing = inp.spacingM ?? HOTSPOTS.suppressRadiusM;

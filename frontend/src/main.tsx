@@ -11,6 +11,11 @@ if (import.meta.env.DEV) {
   (window as unknown as { __scent: unknown }).__scent = { controller, store: useStore };
 }
 
+// keep the app usable with no signal once it has been opened online (public/sw.js)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+
 // learn where the server is (if one is published) before the first page asks
 loadPublishedServer().finally(() =>
   ReactDOM.createRoot(document.getElementById('root')!).render(

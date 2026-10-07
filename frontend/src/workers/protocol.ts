@@ -58,6 +58,8 @@ export interface DeploymentOut {
   windowScores: { hour: number; score: number }[];
   /** 'ground': hedge team on the most likely ground (wind not confirmed on site) */
   kind?: 'scent' | 'ground';
+  /** the route the team works, upwind from the start (local metres) */
+  route?: [number, number][];
 }
 
 export interface AlertResult {
@@ -74,7 +76,11 @@ export interface SearchResult {
 export type Request =
   | { type: 'init'; data: InitMsg }
   | { type: 'setWind'; wind: WindField }
-  | { type: 'probability'; profile: ProfileId; lkp: [number, number]; elapsedH?: number }
+  /** model detection of the hides at each point, for scoring a training run */
+  | { type: 'trial'; pts: [number, number][]; t: number }
+  /** planning ensemble spread (±degrees), from the wind confidence */
+  | { type: 'setSpread'; rotDeg: number }
+  | { type: 'probability'; profile: ProfileId; lkp: [number, number]; elapsedH?: number; travelDir?: number | null }
   | { type: 'brush'; x: number; y: number; factor: number }
   | { type: 'heat'; t: number }
   | { type: 'deploy'; t: number; teams: number; hedge?: boolean }

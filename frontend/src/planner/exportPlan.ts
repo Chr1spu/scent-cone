@@ -55,7 +55,8 @@ export function planGeometry(inp: PlanExportInput): { points: PlanPoint[]; lines
       `Best window ${hhmm(d.bestWindow[0])}-${hhmm(d.bestWindow[1])}. Covers ${(d.coveredProb * 100).toFixed(1)}% of the probability. ` +
       `Planned for ${hhmm(inp.time)} on ${inp.date}. Scentline: modelled, not observed; confirm wind on site.`;
     points.push({ ...p, name: `Team ${d.team} start`, desc, usng: ref });
-    lines.push({ name: `Team ${d.team} heading`, pts: [p, ll(d.x + d.upwind[0] * len, d.y + d.upwind[1] * len)!] });
+    if (d.route && d.route.length > 1) lines.push({ name: `Team ${d.team} route (upwind)`, pts: d.route.map(([x, y]) => ll(x, y)!) });
+    else lines.push({ name: `Team ${d.team} heading`, pts: [p, ll(d.x + d.upwind[0] * len, d.y + d.upwind[1] * len)!] });
   }
   return { points, lines };
 }
