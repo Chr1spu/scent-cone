@@ -1,39 +1,45 @@
-[0s] demo loaded: 300x300 detail grid, focus square holds 69% of the probability
+[0s] demo loaded: 300x300 detail grid, focus square holds 72% of the probability
 [0s] model ensemble (forecast wind)…
 [0s] wind confidence at 19:00: fair (speed 1.6 m/s, models differ 17°, turn 9°)
 [7s] app rule for this wind: one team hedged on likely ground, ±35° planning
-[9s] Scentline (app rule: one team hedged on likely ground, ±35° planning) -105,-405 | -355,-1115 | 5,-145 lkp -9,-5
-[9s] Scent±20 (all teams by scent, ±20° planning) -315,-1065 | -95,-365 | -155,-675 lkp -9,-5
-[9s] Scent±35 (all teams by scent, ±35° planning) -105,-405 | -355,-1115 | -25,-105 lkp -9,-5
-[9s] Hedge±20 (2 by scent + 1 on likely ground, ±20°) -315,-1065 | -95,-365 | -205,-655 lkp -9,-5
-[9s] NoRoute (±20°, starts planned without routes) -275,-985 | -95,-295 | -135,-585 lkp -9,-5
-[9s] Most-likely ground (no scent) -75,-195 | 135,105 | -75,-525 lkp -9,-5
+[9s] Scentline (app rule: one team hedged on likely ground, ±35° planning) -105,-405 | -305,-1045 | 195,-205 lkp -9,-5
+[9s] Scent±20 (all teams by scent, ±20° planning) -105,-405 | -355,-1115 | -175,-725 lkp -9,-5
+[9s] Scent±35 (all teams by scent, ±35° planning) -105,-405 | -305,-1045 | 115,-245 lkp -9,-5
+[9s] Hedge±20 (2 by scent + 1 on likely ground, ±20°) -105,-405 | -355,-1115 | -205,-805 lkp -9,-5
+[9s] NoRoute (±20°, starts planned without routes) -275,-985 | -105,-395 | 295,-175 lkp -9,-5
+[9s] Most-likely ground (no scent) 45,-225 | -165,135 | 305,-75 lkp -9,-5
 [9s] Ring around the LKP -5,-5 | -55,405 | 335,-215 lkp -9,-5
 [9s] Straight downwind of the LKP 15,-255 | 35,-555 | 65,-845 lkp -9,-5
-[13s] wind error ±0°: Scentline 35.8±3.0% · Scent±20 39.5±3.8% · Scent±35 37.7±2.8% · Hedge±20 35.1±3.1% · NoRoute 38.4±3.3% · Most-likely 13.8±0.2% · Ring 4.6±0.2% · Straight 9.6±0.2% · Random 4.2±0.1% · Oracle 38.2±3.1%
-[17s] wind error ±15°: Scentline 25.9±9.8% · Scent±20 24.1±1.3% · Scent±35 27.7±8.0% · Hedge±20 24.7±1.2% · NoRoute 27.2±1.9% · Most-likely 14.3±1.2% · Ring 5.9±0.7% · Straight 8.9±0.2% · Random 4.2±0.4% · Oracle 39.1±2.6%
-[20s] wind error ±30°: Scentline 17.7±1.7% · Scent±20 12.1±0.3% · Scent±35 13.6±4.9% · Hedge±20 14.2±4.9% · NoRoute 12.7±0.6% · Most-likely 17.3±2.8% · Ring 7.9±0.5% · Straight 10.7±2.4% · Random 4.0±0.4% · Oracle 33.1±1.9%
-[24s] wind error ±45°: Scentline 11.9±0.5% · Scent±20 8.7±0.2% · Scent±35 11.2±1.1% · Hedge±20 8.6±0.6% · NoRoute 10.1±0.3% · Most-likely 14.1±2.9% · Ring 6.3±1.8% · Straight 11.5±3.4% · Random 3.5±0.4% · Oracle 26.3±1.1%
-[27s] wind error ±90°: Scentline 9.1±0.2% · Scent±20 7.6±0.3% · Scent±35 9.1±0.7% · Hedge±20 7.6±0.5% · NoRoute 9.1±0.3% · Most-likely 10.8±0.7% · Ring 7.6±0.4% · Straight 10.8±4.1% · Random 3.5±0.1% · Oracle 16.4±0.8%
-[27s] ensemble spread…
-[30s] ensemble ±20°: 0°→39.5% 15°→24.1% 30°→12.1% 45°→8.7% 90°→7.6% mean 18.4%
-[32s] ensemble ±35°: 0°→37.7% 15°→27.7% 30°→13.6% 45°→11.2% 90°→9.1% mean 19.9%
-[37s] ensemble ±50°: 0°→35.4% 15°→30.5% 30°→13.1% 45°→10.4% 90°→8.9% mean 19.7%
-[37s] sensitivity…
-[40s] Scent decay time ×0.5 (15 min): starts move 60 m, success 28.2% (base 29.6%)
-[43s] Scent decay time ×2 (60 min): starts move 144 m, success 27.0% (base 29.6%)
-[45s] Plume spread ×0.5: starts move 158 m, success 26.5% (base 29.6%)
-[48s] Plume spread ×2: starts move 161 m, success 26.6% (base 29.6%)
-[50s] Turbulence memory 300 s: starts move 3 m, success 29.5% (base 29.6%)
-[52s] Turbulence memory 1200 s: starts move 7 m, success 29.5% (base 29.6%)
-[52s] Team acts on a detection 50%: starts move 0 m, success 29.6% (base 29.6%)
-[52s] Team acts on a detection 90%: starts move 127 m, success 28.4% (base 29.6%)
-[54s] Dog range (d50) 120 m: starts move 114 m, success 28.5% (base 29.6%)
-[56s] Dog range (d50) 320 m: starts move 150 m, success 27.7% (base 29.6%)
-[56s] Route 300 m: starts move 0 m, success 29.6% (base 29.6%)
-[56s] Route 1000 m: starts move 0 m, success 29.6% (base 29.6%)
-[59s] Close-range detectability 0.3: starts move 0 m, success 29.6% (base 29.6%)
-[61s] Close-range detectability 0.9: starts move 39 m, success 28.0% (base 29.6%)
-[61s] Team spacing 150 m: starts move 31 m, success 33.3% (base 29.6%)
-[61s] Team spacing 500 m: starts move 168 m, success 28.4% (base 29.6%)
-[61s] wrote scripts/evaluation-results.json
+[11s] segments: 30 of ~0.30 km² (default), 67 one-hour segments
+[11s] SegApp (segments ~2.3 h, app rule) D2, E3, D3
+[11s] SegScent (segments ~2.3 h, all by scent, ±20°) D2, E3, D3
+[11s] SegPOA (segments ~2.3 h, most likely 3, no scent) D3, D2, C2
+[11s] Seg1h (1-hour segments, all by scent, ±20°) F4, H3, E5
+[11s] Seg1hPOA (1-hour segments, most likely 3, no scent) E5, E4, F4
+[15s] wind error ±0°: Scentline 40.8±2.7% · Scent±20 41.8±3.5% · Scent±35 40.1±2.7% · Hedge±20 44.2±3.3% · NoRoute 39.0±2.7% · Most-likely 9.2±1.1% · Ring 3.1±0.7% · Straight 8.4±0.7% · SegApp 56.1±2.0% · SegScent 56.1±2.0% · SegPOA 48.1±0.5% · Seg1h 47.5±2.8% · Seg1hPOA 40.5±0.6% · Random 3.0±0.1% · Oracle 40.8±2.3%
+[19s] wind error ±15°: Scentline 28.0±10.4% · Scent±20 28.7±9.9% · Scent±35 26.9±10.7% · Hedge±20 29.4±10.8% · NoRoute 27.9±5.2% · Most-likely 9.3±1.4% · Ring 4.9±0.7% · Straight 7.2±1.2% · SegApp 54.8±1.1% · SegScent 54.8±1.1% · SegPOA 47.9±0.9% · Seg1h 45.6±1.3% · Seg1hPOA 40.4±0.6% · Random 3.0±0.4% · Oracle 42.3±2.4%
+[23s] wind error ±30°: Scentline 11.6±2.8% · Scent±20 9.5±4.2% · Scent±35 11.4±3.0% · Hedge±20 8.8±4.6% · NoRoute 11.9±2.8% · Most-likely 7.8±0.9% · Ring 7.3±0.6% · Straight 9.0±3.4% · SegApp 50.1±1.7% · SegScent 50.1±1.7% · SegPOA 43.5±1.7% · Seg1h 40.1±4.5% · Seg1hPOA 38.8±1.2% · Random 2.9±0.4% · Oracle 37.4±1.7%
+[26s] wind error ±45°: Scentline 8.7±1.1% · Scent±20 6.4±0.5% · Scent±35 10.0±1.6% · Hedge±20 6.2±0.8% · NoRoute 8.0±0.5% · Most-likely 11.4±2.2% · Ring 7.4±1.1% · Straight 11.9±5.8% · SegApp 45.4±3.3% · SegScent 45.4±3.3% · SegPOA 41.7±0.9% · Seg1h 33.5±7.0% · Seg1hPOA 36.4±2.6% · Random 2.4±0.3% · Oracle 30.2±1.9%
+[30s] wind error ±90°: Scentline 5.8±1.5% · Scent±20 3.6±0.5% · Scent±35 6.6±2.0% · Hedge±20 3.6±0.5% · NoRoute 4.7±0.7% · Most-likely 8.9±2.8% · Ring 6.8±1.9% · Straight 8.1±4.4% · SegApp 30.3±1.8% · SegScent 30.3±1.8% · SegPOA 35.0±0.7% · Seg1h 21.5±3.5% · Seg1hPOA 27.6±2.2% · Random 2.4±0.2% · Oracle 15.9±1.1%
+[30s] ensemble spread…
+[33s] ensemble ±20°: 0°→41.8% 15°→28.7% 30°→9.5% 45°→6.4% 90°→3.6% mean 18.0%
+[35s] ensemble ±35°: 0°→40.1% 15°→26.9% 30°→11.4% 45°→10.0% 90°→6.6% mean 19.0%
+[39s] ensemble ±50°: 0°→40.8% 15°→25.1% 30°→13.6% 45°→7.0% 90°→5.1% mean 18.3%
+[39s] sensitivity…
+[42s] Scent decay time ×0.5 (15 min): starts move 90 m, success 31.6% (base 31.3%)
+[45s] Scent decay time ×2 (60 min): starts move 66 m, success 30.2% (base 31.3%)
+[47s] Plume spread ×0.5: starts move 143 m, success 31.8% (base 31.3%)
+[49s] Plume spread ×2: starts move 31 m, success 30.4% (base 31.3%)
+[52s] Turbulence memory 300 s: starts move 56 m, success 31.3% (base 31.3%)
+[54s] Turbulence memory 1200 s: starts move 109 m, success 30.7% (base 31.3%)
+[54s] Team acts on a detection 50%: starts move 0 m, success 31.3% (base 31.3%)
+[54s] Team acts on a detection 90%: starts move 162 m, success 30.7% (base 31.3%)
+[56s] Dog range (d50) 120 m: starts move 32 m, success 31.8% (base 31.3%)
+[57s] Dog range (d50) 320 m: starts move 60 m, success 30.3% (base 31.3%)
+[58s] Route 300 m: starts move 32 m, success 31.8% (base 31.3%)
+[58s] Route 1000 m: starts move 0 m, success 31.3% (base 31.3%)
+[60s] Close-range detectability 0.3: starts move 0 m, success 31.3% (base 31.3%)
+[62s] Close-range detectability 0.9: starts move 0 m, success 31.3% (base 31.3%)
+[62s] Team spacing 150 m: starts move 18 m, success 31.5% (base 31.3%)
+[62s] Team spacing 500 m: starts move 173 m, success 31.3% (base 31.3%)
+[62s] wrote scripts/evaluation-results.json

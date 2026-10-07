@@ -11,7 +11,7 @@ import { meanderCoef, stabilityClass, sunAt, type Weather } from './env';
 import { calibrateDetection } from './detection';
 import { deployableCells, greedyDeploy, sourceSums } from './hotspots';
 import { barrierFactor, buildStaticLayers, computeProbability, shareBeyond, travelFactor, travelLimitBinds, travelReachM } from './probability';
-import { blockIndex, createSim, makeStepEnv, runEnsemble, step } from './scent';
+import { blockIndex, normalizeContrib, createSim, makeStepEnv, runEnsemble, step } from './scent';
 import { buildTerrainInfo, LC, noseWindFactor, type TerrainInfo } from './terrainInfo';
 import { backtrace } from './triangulation';
 import { IDENTITY_MEMBER, type WindField } from './wind';
@@ -249,7 +249,7 @@ describe('end-to-end sanity', () => {
     prob[cellAt(ti.map, -250, 0)] = 1;
     const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
     const deployable = deployableCells(ti, new Uint8Array(n * n), new Uint8Array(n * n));
-    const { heat, contrib } = runEnsemble({ ti, field, place, weather: weatherWith(2, 0), prob, tEnd: 21, members: 2, particles: 3000, dt: 10, blocks });
+    const { heat, contrib } = normalizeContrib(runEnsemble({ ti, field, place, weather: weatherWith(2, 0), prob, tEnd: 21, members: 2, particles: 3000, dt: 10, blocks }), 2, 3000);
     const [first] = greedyDeploy({ contrib: contrib!, blocks, curve: calibrateDetection(), windAt: () => ({ u: 0.5, v: 0 }), routeM: 0, heat, q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 2 });
     expect(first).toBeDefined();
     expect(first.x).toBeGreaterThan(-250); // east of the source = downwind

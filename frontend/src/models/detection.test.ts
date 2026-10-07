@@ -19,8 +19,9 @@ describe('absolute detection calibration', () => {
     for (let i = 2; i < p.length; i++) expect(p[i].c).toBeLessThan(p[i - 2].c);
   });
   it('detects one person half the time at d50, mostly closer, rarely far beyond', () => {
-    expect(at(DETECTION.d50M)).toBeGreaterThan(0.4);
-    expect(at(DETECTION.d50M)).toBeLessThan(0.6);
+    // the profile is sampled every 50 m (receiver blocks), so d50 falls between two samples
+    expect(at(DETECTION.d50M)).toBeGreaterThan(0.35);
+    expect(at(DETECTION.d50M)).toBeLessThan(0.65);
     expect(at(DETECTION.d50M / 2)).toBeGreaterThan(0.8);
     expect(at(DETECTION.d50M * 2)).toBeLessThan(0.2);
     expect(detectFromConc(0, curve)).toBe(0);

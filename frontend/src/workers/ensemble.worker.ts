@@ -29,7 +29,7 @@ export type HelperMsg =
   | { type: 'tuning'; tuning: { tauScale: number; liftScale: number } }
   | { type: 'run'; id: number; task: EnsembleTask };
 
-export type HelperReply = { id: number; heat: Float32Array; contrib?: Float32Array } | { id: number; error: string };
+export type HelperReply = { id: number; heat: Float32Array; contrib?: Float32Array; events: number } | { id: number; error: string };
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let ti: TerrainInfo | null = null;
@@ -78,7 +78,7 @@ ctx.onmessage = (ev: MessageEvent<HelperMsg>) => {
     });
     const transfer: Transferable[] = [r.heat.buffer];
     if (r.contrib) transfer.push(r.contrib.buffer);
-    ctx.postMessage({ id: m.id, heat: r.heat, contrib: r.contrib } satisfies HelperReply, transfer);
+    ctx.postMessage({ id: m.id, heat: r.heat, contrib: r.contrib, events: r.events } satisfies HelperReply, transfer);
   } catch (e) {
     ctx.postMessage({ id: m.id, error: e instanceof Error ? e.message : String(e) } satisfies HelperReply);
   }

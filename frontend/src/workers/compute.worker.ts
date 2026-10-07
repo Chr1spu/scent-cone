@@ -25,13 +25,14 @@ import {
   sumInside,
   type StaticLayers,
 } from '../models/probability';
-import { blockIndex, meanderFor, type BlockIndex } from '../models/scent';
+import { normalizeContrib, blockIndex, meanderFor, type BlockIndex } from '../models/scent';
 import { EnsemblePool, parallelEnsemble, poolSize } from './pool';
 import { searchUpdate, type SearchedSector } from '../models/searchUpdate';
 import { buildTerrainInfo, LC, type TerrainInfo } from '../models/terrainInfo';
 import { alertLikelihood, argmax, backtrace, driftPoint } from '../models/triangulation';
 import { sampleWind, type WindField } from '../models/wind';
-import type { AlertResult, DeploymentOut, Envelope, HeatResult, InitMsg, ProbResult, Reply, SearchResult, SourceSpec } from './protocol';
+import type { AlertResult, DeploymentOut, Envelope, HeatResult, InitMsg, ProbResult, Reply, SearchResult, SegmentInfo, SegmentsResult, SourceSpec } from './protocol';
+import { assignSegments, receiversOfSegments, scoreSegments, segmentArea, segmentBoundary, sweepDetection, type Segmentation } from '../models/segments';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -62,6 +63,10 @@ interface State {
   elapsedH: number | undefined;
   /** planning ensemble spread (±degrees) */
   rotDeg: number;
+  /** search segments of the focus square (built on first use) */
+  seg: Segmentation | null;
+  /** product of negative-update (searched, no alert) factors per detail cell */
+  Lneg: Float32Array;
   /** intended direction of travel (degrees from north) or null */
   travelDir: number | null;
   warmed: boolean;
@@ -123,6 +128,8 @@ function init(m: InitMsg) {
     edits: new Float32Array(m.overview.elev.length).fill(1),
     elapsedH: undefined,
     rotDeg: ENSEMBLE.rotDeg,
+    seg: null,
+    Lneg: new Float32Array(nD).fill(1),
     travelDir: null,
     prior: null,
     L: new Float32Array(nD).fill(1),
@@ -243,6 +250,7 @@ function setMission(mission: MissionId, source: SourceSpec): ProbResult {
   pool?.setTuning(t);
   s.deployable = deployableCells(s.ti, s.detailWater, s.cliff, { maxSlopeDeg: t.maxSlopeDeg, mode: t.deploy });
   s.L.fill(1);
+  s.Lneg.fill(1);
   s.outside = 1;
   s.source = source;
   s.prior = null;
@@ -274,7 +282,7 @@ async function ensembleAt(t: number, report: (f: number, l: string) => void, win
       tick();
     }),
   ]);
-  const { heat, contrib } = main;
+  const { heat, contrib } = normalizeContrib(main, ENSEMBLE.members, ENSEMBLE.particlesPerMember);
   const cols = s.ti.meta.cols;
   const rows = s.ti.meta.rows;
   s.last = {
@@ -353,8 +361,137 @@ async function hourlySnapshots(report: (f: number, l: string) => void): Promise<
   return byHour;
 }
 
-async function deploy(t: number, teams: number, hedge: boolean, report: (f: number, l: string) => void): Promise<DeploymentOut[]> {
+// ---------------------------------------------------------------- segments
+
+function segmentation(): Segmentation {
   const s = st();
+  if (s.seg) return s.seg;
+  const boundary = segmentBoundary(s.init.features, s.ti.map, s.ti.elev);
+  s.seg = segmentArea({ map: s.ti.map, boundary, excluded: s.detailWater });
+  return s.seg;
+}
+
+/** Score every segment for a dog team over the hour ending at t. */
+async function scoreAt(t: number, report: (f: number, l: string) => void) {
+  const s = st();
+  const seg = segmentation();
+  const e = await ensembleAt(t, (f, l) => report(f * 0.55, l));
+  const q = sourceSums(s.detailPost!, s.blocks);
+  const scores = scoreSegments({
+    seg,
+    map: s.ti.map,
+    blocks: s.blocks,
+    det: detectionAt(e, t),
+    q,
+    deployable: s.deployable,
+    windAt: (x, y) => sampleWind(s.wind, s.ti.map, x, y, t),
+    pod: MISSIONS[s.mission].tuning.pod,
+    insideDet: sweepDetection(e.relStrength),
+  });
+  const snaps = await hourlySnapshots(report);
+  const recv = receiversOfSegments(seg, s.ti.map, s.blocks);
+  const hours = [...snaps.keys()].sort((a, b) => a - b);
+  const windows = recv.map((rs) =>
+    hours.map((hour) => {
+      const hr = snaps.get(hour)!;
+      let sum = 0;
+      for (const r of rs) sum += snapshotScore(hr, r, e.thRecv);
+      return { hour, score: rs.length ? sum / rs.length : 0 };
+    }),
+  );
+  return { seg, scores, q, windows };
+}
+
+/** Cumulative POD per segment from the searches logged so far: the share of its prior removed. */
+function searchedPod(seg: Segmentation): Float32Array {
+  const s = st();
+  const prior = s.detailPrior ?? resampleToDetail(s.prior!, s.ovMap, s.ti.map, s.detailWater).prob;
+  const before = new Float64Array(seg.n);
+  const after = new Float64Array(seg.n);
+  for (let i = 0; i < prior.length; i++) {
+    const k = seg.id[i];
+    if (k < 0) continue;
+    before[k] += prior[i];
+    after[k] += prior[i] * s.Lneg[i];
+  }
+  return Float32Array.from(before, (b, k) => (b > 0 ? 1 - after[k] / b : 0));
+}
+
+async function segmentsAt(t: number, report: (f: number, l: string) => void): Promise<SegmentsResult> {
+  const s = st();
+  const { seg, scores, windows } = await scoreAt(t, report);
+  const searched = searchedPod(seg);
+  const f = s.segmentFraction;
+  const segs: SegmentInfo[] = scores.map((sc) => {
+    const ws = windows[sc.seg];
+    const best = ws.reduce((a, b) => (b.score > a.score ? b : a), ws[0] ?? { hour: Math.ceil(t), score: 0 });
+    return {
+      index: sc.seg,
+      name: seg.names[sc.seg],
+      areaM2: seg.areaM2[sc.seg],
+      poa: sc.poa * f,
+      value: sc.value * f,
+      fromOutside: sc.fromOutside * f,
+      podInside: sc.podInside,
+      podSearched: searched[sc.seg],
+      entry: sc.entry,
+      upwind: sc.upwind,
+      windSpeed: sc.windSpeed,
+      hours: sc.hours,
+      bestWindow: [best.hour - 1, best.hour],
+      windowScores: ws,
+    };
+  });
+  return { t, id: seg.id.slice(), names: seg.names, rings: seg.rings, centroid: seg.centroid, segs };
+}
+
+/** Assign teams to whole segments (the handler picks the pattern inside). */
+async function deploySegments(t: number, teams: number, hedge: boolean, report: (f: number, l: string) => void): Promise<DeploymentOut[]> {
+  const s = st();
+  const { seg, scores, q, windows } = await scoreAt(t, report);
+  const tune = MISSIONS[s.mission].tuning;
+  const scentTeams = hedge && teams >= HOTSPOTS.hedgeMinTeams ? teams - 1 : teams;
+  const picks = assignSegments(scores, q, teams, tune.pod, scentTeams);
+  return picks.map((a) => {
+    const sc = a.score;
+    const ws = windows[sc.seg];
+    const best = ws.reduce((x, y) => (y.score > x.score ? y : x), ws[0] ?? { hour: Math.ceil(t), score: 0 });
+    return {
+      team: a.team,
+      x: sc.entry[0],
+      y: sc.entry[1],
+      upwind: sc.upwind,
+      windSpeed: sc.windSpeed,
+      coveredProb: a.marginal * s.segmentFraction,
+      bestWindow: [best.hour - 1, best.hour] as [number, number],
+      windowScores: ws,
+      kind: a.ground ? 'ground' : 'scent',
+      segment: {
+        index: sc.seg,
+        name: seg.names[sc.seg],
+        areaM2: seg.areaM2[sc.seg],
+        poa: sc.poa * s.segmentFraction,
+        podInside: sc.podInside,
+        hours: sc.hours,
+        ring: seg.rings[sc.seg][0] ?? [],
+      },
+    };
+  });
+}
+
+/**
+ * Single-person detection at every team position for the ensemble ending at t, with the plume
+ * width of the stability class at that time and the planning calibration for the current spread.
+ */
+function detectionAt(e: Ensemble, t: number) {
+  const s = st();
+  const { sigmaA } = meanderFor(envAt(s.init.place, s.init.weather, t), TRIANGULATION.dt);
+  return receiverDetection(e.contrib, sourceSums(s.detailPost!, s.blocks), s.blocks, calibrateDetection({ rotDeg: s.rotDeg }), 0.01, { sigmaA, cellM: s.ti.meta.cellSize });
+}
+
+async function deploy(t: number, teams: number, hedge: boolean, report: (f: number, l: string) => void, mode: 'segments' | 'points' = 'points'): Promise<DeploymentOut[]> {
+  const s = st();
+  if (mode === 'segments') return deploySegments(t, teams, hedge, report);
   const e = await ensembleAt(t, (f, l) => report(f * 0.55, l));
   report(0.56, 'Greedy deployment');
   const tune = MISSIONS[s.mission].tuning;
@@ -364,6 +501,7 @@ async function deploy(t: number, teams: number, hedge: boolean, report: (f: numb
     contrib: e.contrib,
     blocks: s.blocks,
     curve: calibrateDetection({ rotDeg: s.rotDeg }),
+    det: detectionAt(e, t),
     windAt: (x, y) => sampleWind(s.wind, s.ti.map, x, y, t),
     heat: e.heat,
     q: sourceSums(s.detailPost!, s.blocks),
@@ -409,7 +547,7 @@ async function deploy(t: number, teams: number, hedge: boolean, report: (f: numb
 async function trialDetection(pts: [number, number][], t: number, report: (f: number, l: string) => void): Promise<Float32Array> {
   const s = st();
   const e = await ensembleAt(t, (f, l) => report(f * 0.9, l));
-  const det = receiverDetection(e.contrib, sourceSums(s.detailPost!, s.blocks), s.blocks, calibrateDetection({ rotDeg: s.rotDeg }));
+  const det = detectionAt(e, t);
   const out = new Float32Array(pts.length);
   pts.forEach(([x, y], i) => {
     const c = cellAt(s.ti.map, x, y);
@@ -445,9 +583,12 @@ async function searched(sector: SearchedSector, t0: number, t1: number, report: 
   const s = st();
   const windowMin = Math.max(15, Math.round((t1 - t0) * 60));
   const e = await ensembleAt(t1, (f, l) => report(f * 0.9, l), windowMin);
-  const det = receiverDetection(e.contrib, sourceSums(s.detailPost!, s.blocks), s.blocks, calibrateDetection({ rotDeg: s.rotDeg }));
-  const r = searchUpdate({ sector, det, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map, pod: MISSIONS[s.mission].tuning.pod });
-  for (let i = 0; i < s.L.length; i++) s.L[i] *= r.factor[i];
+  const det = detectionAt(e, t1);
+  const r = searchUpdate({ sector, det, blocks: s.blocks, heatRecv: e.heatRecv, th: e.thRecv, map: s.ti.map, pod: MISSIONS[s.mission].tuning.pod, insideDet: sweepDetection(e.relStrength) });
+  for (let i = 0; i < s.L.length; i++) {
+    s.L[i] *= r.factor[i];
+    s.Lneg[i] *= r.factor[i];
+  }
   return { meanDet: r.meanDet, recheck: r.recheck, prob: recomputePosterior() };
 }
 
@@ -559,7 +700,10 @@ async function handle({ id, req }: Envelope): Promise<void> {
         result = await heatAt(req.t, report);
         break;
       case 'deploy':
-        result = await deploy(req.t, req.teams, !!req.hedge, report);
+        result = await deploy(req.t, req.teams, !!req.hedge, report, req.mode);
+        break;
+      case 'segments':
+        result = await segmentsAt(req.t, report);
         break;
       case 'trial':
         result = await trialDetection(req.pts, req.t, report);
@@ -573,6 +717,7 @@ async function handle({ id, req }: Envelope): Promise<void> {
       case 'resetSearch': {
         const s = st();
         s.L.fill(1);
+        s.Lneg.fill(1);
         s.outside = 1;
         s.edits.fill(1);
         recomputePrior();

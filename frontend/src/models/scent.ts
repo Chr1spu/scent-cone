@@ -40,6 +40,8 @@ export interface Sim {
   sources: Sources;
   ti: TerrainInfo;
   rng: Rng;
+  /** releases so far (a staggered particle starting, or a re-emission): the emission count */
+  events: number;
 }
 
 export interface SimParams {
@@ -68,12 +70,14 @@ export function createSim(p: SimParams): Sim {
     sources: p.sources ?? buildSources(p.prob),
     ti: p.ti,
     rng: new Rng(p.seed),
+    events: 0,
   };
   const stagger = p.staggerS ?? 0;
   for (let i = 0; i < p.n; i++) {
     emit(sim, i);
     if (stagger > 0) sim.age[i] = -sim.rng.next() * stagger;
   }
+  if (stagger <= 0) sim.events = p.n;
   return sim;
 }
 
@@ -199,6 +203,7 @@ export function step(sim: Sim, field: WindField, se: StepEnv, dt: number, acc?: 
   for (let i = 0; i < sim.n; i++) {
     if (A[i] < 0) {
       A[i] += dt;
+      if (A[i] >= 0) sim.events++;
       continue;
     }
     let x = X[i];
@@ -239,6 +244,7 @@ export function step(sim: Sim, field: WindField, se: StepEnv, dt: number, acc?: 
     fr = -y * inv + oy;
     if (fc < -0.5 || fr < -0.5 || fc > cols - 0.5 || fr > rows - 0.5 || s < SCENT.minStrength || A[i] > lifetime) {
       emit(sim, i);
+      sim.events++;
       continue;
     }
     X[i] = x;
@@ -316,6 +322,22 @@ export interface EnsembleInput {
 export interface EnsembleResult {
   heat: Float32Array;
   contrib?: Float32Array;
+  /** scent releases over the members run (see normalizeContrib) */
+  events: number;
+}
+
+/**
+ * Scale contributions to per-release units, in place. Raw contributions are per simulated
+ * particle, so they depend on how long particles stay on the grid (a small grid recycles them
+ * quickly and looks stronger). Per release, a person's plume has the same strength whatever the
+ * grid: what absolute detection needs. `members` and `particles` are the full run's.
+ */
+export function normalizeContrib(res: EnsembleResult, members: number, particles: number): EnsembleResult {
+  if (res.contrib && res.events > 0) {
+    const k = (members * particles) / res.events;
+    for (let i = 0; i < res.contrib.length; i++) res.contrib[i] *= k;
+  }
+  return res;
 }
 
 /**
@@ -340,6 +362,7 @@ export function runEnsemble(inp: EnsembleInput): EnsembleResult {
   const halfLife = SCENT.accumHalfLifeS;
   const memberRng = new Rng(seed ^ 0x9e3779b9);
   const [from, to] = inp.memberRange ?? [0, members];
+  let events = 0;
   for (let mi = 0; mi < members; mi++) {
     const member = members === 1 ? IDENTITY_MEMBER : makeMember(memberRng, inp.rotDeg);
     if (mi < from || mi >= to) continue;
@@ -360,7 +383,8 @@ export function runEnsemble(inp: EnsembleInput): EnsembleResult {
       };
       step(sim, inp.field, se, dt, acc);
     }
+    events += sim.events;
     inp.onProgress?.((mi + 1 - from) / (to - from));
   }
-  return { heat, contrib };
+  return { heat, contrib, events };
 }

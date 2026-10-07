@@ -20,15 +20,17 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DETECTION, ENSEMBLE, HOTSPOTS, PROFILES, SCENT, TURBULENCE } from '../src/config/modelParams';
+import { DETECTION, ENSEMBLE, HOTSPOTS, PROFILES, SCENT, SEGMENTS, TURBULENCE } from '../src/config/modelParams';
 import { loadOffline } from '../src/api/loader';
 import { cellCenterLocal, gridMap, toLocal } from '../src/geo/grid';
 import { calibrateDetection, receiverDetection, type ReceiverDetection } from '../src/models/detection';
 import { deployableCells, greedyDeploy, routeCoverage, sourceSums, traceRoute, type WindAt } from '../src/models/hotspots';
 import { samplePoints, windConfidence } from '../src/models/windConfidence';
+import { assignSegments, scoreSegments, segmentArea, segmentBoundary, type Segmentation } from '../src/models/segments';
 import { barrierFactor, buildStaticLayers, computeProbability, rasterizeLines, rasterizePolygons, resampleToDetail } from '../src/models/probability';
 import { Rng } from '../src/models/rng';
-import { blockIndex, runEnsemble, type BlockIndex } from '../src/models/scent';
+import { blockIndex, meanderFor, normalizeContrib, runEnsemble, type BlockIndex } from '../src/models/scent';
+import { envAt } from '../src/models/env';
 import { buildTerrainInfo, LC } from '../src/models/terrainInfo';
 import { sampleWind, type WindField } from '../src/models/wind';
 
@@ -80,13 +82,16 @@ interface Run {
   field: WindField;
 }
 function scent(field: WindField, seed: number, members = ENSEMBLE.members): Run {
-  const { heat, contrib } = runEnsemble({ ti, field, place, weather: b.weather, prob, tEnd: T, members, particles: QUICK ? 2500 : ENSEMBLE.particlesPerMember, blocks, seed });
+  const particles = QUICK ? 2500 : ENSEMBLE.particlesPerMember;
+  const { heat, contrib } = normalizeContrib(runEnsemble({ ti, field, place, weather: b.weather, prob, tEnd: T, members, particles, blocks, seed }), members, particles);
   return { heat, contrib: contrib!, field };
 }
 const windAtOf =
   (field: WindField): WindAt =>
   (x, y) =>
     sampleWind(field, ti.map, x, y, T);
+/** plume-width coefficient for the stability class at the deploy time */
+const sigmaAT = meanderFor(envAt(place, b.weather, T), 5).sigmaA;
 /** physical (single plume) calibration: what a dog in the true world detects */
 const physCurve = calibrateDetection({ members: 1 });
 function rotated(field: WindField, deg: number, scale: number): WindField {
@@ -149,6 +154,7 @@ function scentlinePlan(run: Run, o: PlanOpts = {}): number[] {
     contrib: run.contrib,
     blocks,
     curve,
+    sigmaA: sigmaAT,
     windAt: windAtOf(run.field),
     routeM: o.routeM,
     heat: run.heat,
@@ -183,6 +189,24 @@ function randomPlan(rng: Rng): number[] {
   return spaced(cands, TEAMS, HOTSPOTS.suppressRadiusM);
 }
 
+// ---------------------------------------------------------------- segment plans
+/**
+ * Segment assignments: each team searches a whole segment. Two sizes: the planner's default (about
+ * 2.3 team-hours each) and one-hour segments, which match the one hour of effort of a route plan.
+ */
+const segBoundary = segmentBoundary(b.features, ti.map, ti.elev);
+const segsDefault = segmentArea({ map: ti.map, boundary: segBoundary, excluded: water });
+const segsHour = segmentArea({ map: ti.map, boundary: segBoundary, excluded: water, targetM2: SEGMENTS.teamRateM2PerH });
+interface SegPlan {
+  seg: Segmentation;
+  picks: number[];
+}
+function segmentPlan(run: Run, seg: Segmentation, scentTeams = TEAMS): SegPlan {
+  const det = receiverDetection(run.contrib, q, blocks, calibrateDetection(), 0.01, { sigmaA: sigmaAT, cellM: ti.meta.cellSize });
+  const scores = scoreSegments({ seg, map: ti.map, blocks, det, q, deployable, windAt: windAtOf(run.field) });
+  return { seg, picks: assignSegments(scores, q, TEAMS, HOTSPOTS.dogPOD, scentTeams).map((a) => a.score.seg) };
+}
+
 // ---------------------------------------------------------------- scoring in a world
 interface World {
   run: Run;
@@ -190,8 +214,26 @@ interface World {
   windAt: WindAt;
 }
 function world(run: Run): World {
-  return { run, det: receiverDetection(run.contrib, q, blocks, physCurve), windAt: windAtOf(run.field) };
+  return { run, det: receiverDetection(run.contrib, q, blocks, physCurve, 0.01, { sigmaA: sigmaAT, cellM: ti.meta.cellSize }), windAt: windAtOf(run.field) };
 }
+function segmentSuccess(plan: SegPlan, w: World, pod = HOTSPOTS.dogPOD): number {
+  const scores = scoreSegments({ seg: plan.seg, map: ti.map, blocks, det: w.det, q, deployable, windAt: w.windAt, pod });
+  const miss = new Float64Array(blocks.nSrc).fill(1);
+  for (const k of plan.picks) {
+    const c = scores[k].cover;
+    for (let i = 0; i < c.src.length; i++) miss[c.src[i]] *= 1 - pod * c.d[i];
+  }
+  let found = 0;
+  for (let s = 0; s < blocks.nSrc; s++) found += q[s] * (1 - miss[s]);
+  return found;
+}
+/** Most likely segments, by probability inside alone (no scent). */
+function poaSegmentPlan(seg: Segmentation): SegPlan {
+  const poa = new Float64Array(seg.n);
+  for (let i = 0; i < prob.length; i++) if (seg.id[i] >= 0) poa[seg.id[i]] += prob[i];
+  return { seg, picks: [...poa.keys()].sort((a, b2) => poa[b2] - poa[a]).slice(0, TEAMS) };
+}
+
 function success(plan: number[], w: World, pod = HOTSPOTS.dogPOD): number {
   const miss = new Float64Array(blocks.nSrc).fill(1);
   for (const cell of plan) {
@@ -231,9 +273,25 @@ const plans: Record<string, number[]> = {
   'Straight downwind of the LKP': downwindPlan(),
 };
 for (const [n, pl] of Object.entries(plans)) log(n, pl.map((cell) => cellXY(cell).map((v) => Math.round(v)).join(',')).join(' | '), 'lkp', lkp.map(Math.round).join(','));
+const wideRun = (() => {
+  const save = ENSEMBLE.rotDeg;
+  ENSEMBLE.rotDeg = 35;
+  const run = scent(wind, 1000 + T * 60);
+  ENSEMBLE.rotDeg = save;
+  return run;
+})();
+const segPlans: Record<string, SegPlan> = {
+  'SegApp (segments ~2.3 h, app rule)': conf.level === 'good' ? segmentPlan(model, segsDefault) : segmentPlan(wideRun, segsDefault, TEAMS - 1),
+  'SegScent (segments ~2.3 h, all by scent, ±20°)': segmentPlan(model, segsDefault),
+  'SegPOA (segments ~2.3 h, most likely 3, no scent)': poaSegmentPlan(segsDefault),
+  'Seg1h (1-hour segments, all by scent, ±20°)': segmentPlan(model, segsHour),
+  'Seg1hPOA (1-hour segments, most likely 3, no scent)': poaSegmentPlan(segsHour),
+};
+log(`segments: ${segsDefault.n} of ~${(SEGMENTS.targetM2 / 1e6).toFixed(2)} km² (default), ${segsHour.n} one-hour segments`);
+for (const [n, sp] of Object.entries(segPlans)) log(n, sp.picks.map((k) => sp.seg.names[k]).join(', '));
 const rng = new Rng(4242);
 const randomPlans = Array.from({ length: 30 }, () => randomPlan(rng));
-const results: Record<string, number[]> = Object.fromEntries([...Object.keys(plans), 'Random (within 1.5 km)', 'Oracle (knows the true wind)'].map((k) => [k, [] as number[]]));
+const results: Record<string, number[]> = Object.fromEntries([...Object.keys(plans), ...Object.keys(segPlans), 'Random (within 1.5 km)', 'Oracle (knows the true wind)'].map((k) => [k, [] as number[]]));
 const meanStd = (a: number[]) => {
   const m = a.reduce((s, v) => s + v, 0) / a.length;
   return { m, sd: Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / Math.max(1, a.length - 1)) };
@@ -251,6 +309,7 @@ for (const err of ERRORS) {
     const w = world(truthRun);
     worldsByErr.get(err)!.push(w);
     for (const [name, plan] of Object.entries(plans)) per[name].push(success(plan, w));
+    for (const [name, sp] of Object.entries(segPlans)) per[name].push(segmentSuccess(sp, w));
     per['Random (within 1.5 km)'].push(randomPlans.reduce((s, p) => s + success(p, w), 0) / randomPlans.length);
     per['Oracle (knows the true wind)'].push(success(scentlinePlan(truthRun, { physical: true }), w));
   }

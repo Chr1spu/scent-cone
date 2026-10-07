@@ -39,22 +39,25 @@ const hhmm = (t: number) => {
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** The plan as geographic points and heading lines; null if the area grid is not UTM. */
-export function planGeometry(inp: PlanExportInput): { points: PlanPoint[]; lines: { name: string; pts: Pt[] }[] } | null {
+export function planGeometry(inp: PlanExportInput): { points: PlanPoint[]; lines: { name: string; pts: Pt[]; closed?: boolean }[] } | null {
   const ll = (x: number, y: number) => localToLatLon(inp.crs, inp.frame, x, y);
   const l0 = ll(inp.lkp[0], inp.lkp[1]);
   if (!l0) return null;
   const points: PlanPoint[] = [{ ...l0, name: inp.lkpLabel, desc: `${inp.lkpLabel}. ${usng(l0.lat, l0.lon)}`, usng: usng(l0.lat, l0.lon) }];
-  const lines: { name: string; pts: Pt[] }[] = [];
+  const lines: { name: string; pts: Pt[]; closed?: boolean }[] = [];
   const len = inp.headingLineM ?? 300;
   for (const d of inp.deployments) {
     const p = ll(d.x, d.y)!;
     const ref = usng(p.lat, p.lon);
     const deg = Math.round(((Math.atan2(d.upwind[0], d.upwind[1]) * 180) / Math.PI + 360) % 360);
+    const seg = d.segment ? `Segment ${d.segment.name}, ${Math.round(d.segment.areaM2 / 4046.86)} acres, ~${d.segment.hours.toFixed(1)} h; holds ${(d.segment.poa * 100).toFixed(1)}% of the probability. Entry point (downwind edge). ` : '';
     const desc =
+      seg +
       `Team ${d.team} start${d.kind === 'ground' ? ' (ground search of the most likely area)' : ''}. ${ref}. Work toward ${deg}° (${POINTS[Math.round(deg / 45) % 8]}) into a ${d.windSpeed.toFixed(1)} m/s wind. ` +
       `Best window ${hhmm(d.bestWindow[0])}-${hhmm(d.bestWindow[1])}. Covers ${(d.coveredProb * 100).toFixed(1)}% of the probability. ` +
       `Planned for ${hhmm(inp.time)} on ${inp.date}. Scentline: modelled, not observed; confirm wind on site.`;
     points.push({ ...p, name: `Team ${d.team} start`, desc, usng: ref });
+    if (d.segment && d.segment.ring.length > 2) lines.push({ name: `Segment ${d.segment.name} (Team ${d.team})`, pts: d.segment.ring.map(([x, y]) => ll(x, y)!), closed: true });
     if (d.route && d.route.length > 1) lines.push({ name: `Team ${d.team} route (upwind)`, pts: d.route.map(([x, y]) => ll(x, y)!) });
     else lines.push({ name: `Team ${d.team} heading`, pts: [p, ll(d.x + d.upwind[0] * len, d.y + d.upwind[1] * len)!] });
   }
@@ -85,8 +88,10 @@ export function toKml(inp: PlanExportInput): string | null {
     (p, i) =>
       `    <Placemark><name>${esc(p.name)}</name><description>${esc(p.desc)}</description><styleUrl>#${i === 0 ? 'lkp' : 'team'}</styleUrl><Point><coordinates>${c(p)}</coordinates></Point></Placemark>`,
   );
-  const lines = g.lines.map(
-    (l) => `    <Placemark><name>${esc(l.name)}</name><styleUrl>#heading</styleUrl><LineString><coordinates>${l.pts.map(c).join(' ')}</coordinates></LineString></Placemark>`,
+  const lines = g.lines.map((l) =>
+    l.closed
+      ? `    <Placemark><name>${esc(l.name)}</name><styleUrl>#segment</styleUrl><Polygon><outerBoundaryIs><LinearRing><coordinates>${[...l.pts, l.pts[0]].map(c).join(' ')}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`
+      : `    <Placemark><name>${esc(l.name)}</name><styleUrl>#heading</styleUrl><LineString><coordinates>${l.pts.map(c).join(' ')}</coordinates></LineString></Placemark>`,
   );
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
@@ -95,6 +100,7 @@ export function toKml(inp: PlanExportInput): string | null {
     <Style id="lkp"><IconStyle><color>ff2c6bff</color></IconStyle></Style>
     <Style id="team"><IconStyle><color>ff47b5ff</color></IconStyle></Style>
     <Style id="heading"><LineStyle><color>ff2c6bff</color><width>3</width></LineStyle></Style>
+    <Style id="segment"><LineStyle><color>ff47b5ff</color><width>2</width></LineStyle><PolyStyle><color>3347b5ff</color></PolyStyle></Style>
 ${[...marks, ...lines].join('\n')}
   </Document>
 </kml>

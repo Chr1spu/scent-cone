@@ -234,6 +234,8 @@ export interface DeployInput {
   curve: DetectionCurve;
   /** precomputed receiver detection (else built from contrib, q and curve) */
   det?: ReceiverDetection;
+  /** Briggs plume-width coefficient for the current stability class (default neutral) */
+  sigmaA?: number;
   /** local wind for each team's upwind route; omitted = teams stay at their start */
   windAt?: WindAt;
   /** route length (m), default HOTSPOTS.routeM */
@@ -259,7 +261,7 @@ export function greedyDeploy(inp: DeployInput): Deployment[] {
   const recvRows = nRecv / recvCols;
   const cols = map.cols;
   const routeM = inp.routeM ?? HOTSPOTS.routeM;
-  const det = inp.det ?? receiverDetection(inp.contrib, q, b, inp.curve);
+  const det = inp.det ?? receiverDetection(inp.contrib, q, b, inp.curve, 0.01, { sigmaA: inp.sigmaA, cellM: 1 / map.inv });
   const xy = (cell: number): [number, number] => {
     const row = Math.floor(cell / cols);
     return [(cell - row * cols - map.ox) / map.inv, -(row - map.oy) / map.inv];

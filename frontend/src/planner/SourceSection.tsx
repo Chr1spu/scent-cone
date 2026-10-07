@@ -52,7 +52,7 @@ export function SourceSection() {
           </div>
         )}
         {mission.source === 'lkp' && mission.id !== 'pet' && (
-          <label className="mt-1.5 flex items-center gap-1.5 text-[13px] text-ink-2" title="ISRID: three in four lost people are found within 66° of the direction they set off in">
+          <label className="mt-1.5 flex items-center gap-1.5 text-[13px] text-ink-2" title="The direction they set off in, or the direction a trailing dog took from the last known point. ISRID: three in four lost people are found within 66° of it.">
             Heading when last seen
             <select
               className="field !w-auto !py-0.5"

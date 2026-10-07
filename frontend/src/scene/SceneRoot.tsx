@@ -8,6 +8,7 @@ import { AlertZones } from './AlertZones';
 import { CameraRig } from './CameraRig';
 import { DogTeams } from './DogTeams';
 import { TrialTrack } from './TrialTrack';
+import { SegmentsLayer } from './SegmentsLayer';
 import { FeatureLines } from './FeatureLines';
 import { Heatmap } from './Heatmap';
 import { Landmarks } from './Landmarks';
@@ -82,6 +83,7 @@ export function SceneRoot({ bundle }: { bundle: AreaBundle }) {
       <AlertZones bundle={bundle} />
       <DogTeams bundle={bundle} />
       <TrialTrack bundle={bundle} />
+      <SegmentsLayer bundle={bundle} />
       <Markers bundle={bundle} />
     </>
   );

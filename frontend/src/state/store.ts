@@ -5,7 +5,7 @@ import type { AreaBundle } from '../api/types';
 import type { WindField } from '../models/wind';
 import type { SearchedSector as SectorShape } from '../models/searchUpdate';
 import { DEFAULT_HABITAT, type HabitatSpec, type MissionId } from '../config/missions';
-import type { DeploymentOut, HeatResult, ProbResult } from '../workers/protocol';
+import type { DeploymentOut, HeatResult, ProbResult, SegmentsResult } from '../workers/protocol';
 
 export type LayerId =
   | 'contours'
@@ -19,7 +19,8 @@ export type LayerId =
   | 'hotspots'
   | 'teams'
   | 'alertZones'
-  | 'searched';
+  | 'searched'
+  | 'segments';
 
 export const LAYER_LABELS: Record<LayerId, string> = {
   contours: 'Contour lines',
@@ -34,6 +35,7 @@ export const LAYER_LABELS: Record<LayerId, string> = {
   teams: 'Dog teams',
   alertZones: 'Alert zones',
   searched: 'Searched sectors',
+  segments: 'Search segments',
 };
 
 export type Tool = 'none' | 'lkp' | 'alert' | 'searched' | 'brushUp' | 'brushDown' | 'focus' | 'hide' | 'area';
@@ -131,6 +133,10 @@ export interface State {
   deployments: DeploymentOut[];
   alerts: Alert[];
   searched: SearchedSector[];
+  /** how teams are assigned: whole search segments (default) or start points with routes */
+  assignMode: 'segments' | 'points';
+  /** segments scored for a dog team (with the time and data versions they were scored for) */
+  segments: (SegmentsResult & { probVersion: number; windVersion: number }) | null;
   revealed: boolean;
   suggestions: [number, number, number][];
   scentRelease: number;
@@ -192,6 +198,7 @@ export const useStore = create<State>((set, get) => ({
     teams: true,
     alertZones: true,
     searched: true,
+    segments: true,
   },
   view: 'scene',
   tool: 'none',
@@ -202,6 +209,8 @@ export const useStore = create<State>((set, get) => ({
   deployments: [],
   alerts: [],
   searched: [],
+  assignMode: 'segments',
+  segments: null,
   revealed: false,
   suggestions: [],
   scentRelease: 0,

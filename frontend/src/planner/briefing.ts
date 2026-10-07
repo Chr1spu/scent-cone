@@ -49,6 +49,15 @@ export function briefingText({ area, time, lkp, deployments, grid }: BriefingInp
     const heading = compass((Math.atan2(d.upwind[0], d.upwind[1]) * 180) / Math.PI);
     const pct = Math.round(d.coveredProb * 100);
     const g = grid?.(d.x, d.y);
+    if (d.segment) {
+      parts.push(
+        `Team ${d.team}, segment ${d.segment.name.split('').join(' ')}${d.kind === 'ground' ? ', the most likely ground' : ''}, about ${Math.round(d.segment.areaM2 / 4046.86)} acres, ${d.segment.hours.toFixed(1)} hours. ` +
+          `Enter at the downwind edge, ${where}${g ? `, grid ${spokenGrid(g)}` : ''}. Work ${heading}, into a ${d.windSpeed.toFixed(1)} metre per second wind; your pattern inside. ` +
+          `Best window ${spokenTime(d.bestWindow[0])} to ${spokenTime(d.bestWindow[1])}. ` +
+          `This segment holds ${Math.round(d.segment.poa * 100) < 1 ? 'under 1' : Math.round(d.segment.poa * 100)} percent of the probability.`,
+      );
+      continue;
+    }
     parts.push(
       `Team ${d.team}${d.kind === 'ground' ? ', ground search of the most likely area' : ''}. Start ${where}${g ? `, grid ${spokenGrid(g)}` : ''}. Work ${heading}, into a ${d.windSpeed.toFixed(1)} metre per second wind. ` +
         `Best window ${spokenTime(d.bestWindow[0])} to ${spokenTime(d.bestWindow[1])}. ` +

@@ -5,7 +5,7 @@
 import { runEnsemble, type EnsembleInput, type EnsembleResult } from '../models/scent';
 import type { EnsembleTask, HelperMsg, HelperReply } from './ensemble.worker';
 
-type Pending = { resolve: (r: { heat: Float32Array; contrib?: Float32Array }) => void; reject: (e: Error) => void };
+type Pending = { resolve: (r: { heat: Float32Array; contrib?: Float32Array; events: number }) => void; reject: (e: Error) => void };
 
 export class EnsemblePool {
   private workers: Worker[] = [];
@@ -37,7 +37,7 @@ export class EnsemblePool {
     for (const w of this.workers) w.postMessage({ type: 'wind', wind } satisfies HelperMsg);
   }
 
-  run(task: EnsembleTask): Promise<{ heat: Float32Array; contrib?: Float32Array }> {
+  run(task: EnsembleTask): Promise<{ heat: Float32Array; contrib?: Float32Array; events: number }> {
     return new Promise((resolve, reject) => {
       this.queue.push({ task, p: { resolve, reject } });
       this.pump();
@@ -124,11 +124,13 @@ export async function parallelEnsemble(pool: EnsemblePool | null, inp: EnsembleI
   const parts = await Promise.all(tasks);
   const heat = parts[0].heat;
   const contrib = parts[0].contrib;
+  let events = parts[0].events;
   for (let k = 1; k < parts.length; k++) {
+    events += parts[k].events;
     const h = parts[k].heat;
     for (let i = 0; i < heat.length; i++) heat[i] += h[i];
     const c = parts[k].contrib;
     if (contrib && c) for (let i = 0; i < contrib.length; i++) contrib[i] += c[i];
   }
-  return { heat, contrib };
+  return { heat, contrib, events };
 }

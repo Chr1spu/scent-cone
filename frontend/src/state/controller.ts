@@ -6,7 +6,7 @@ import { backendHealthy, loadLive, loadOffline, type LiveRequest } from '../api/
 import { findSaved, loadSavedArea, saveArea } from '../api/savedAreas';
 import type { AreaBundle } from '../api/types';
 import { DEMO_ALERT_TIMES, VERT_EXAG } from '../config/constants';
-import { ENSEMBLE, PROFILES, TIME, type ProfileId } from '../config/modelParams';
+import { ENSEMBLE, HOTSPOTS, PROFILES, TIME, type ProfileId } from '../config/modelParams';
 import type { SearchedSector as SectorShape } from '../models/searchUpdate';
 import { MISSIONS, type HabitatSpec, type MissionId } from '../config/missions';
 import { cellAt, toLocal, toWorld } from '../geo/grid';
@@ -19,7 +19,7 @@ import { samplePoints, windConfidence, type WindConfidence } from '../models/win
 import { buildTerrainInfo, shadowMask, type TerrainInfo } from '../models/terrainInfo';
 import { computeFallbackWind, smoothedGradients, type TerrainGradients, type WindField } from '../models/wind';
 import { ComputeClient } from '../workers/client';
-import type { AlertResult, DeploymentOut, HeatResult, ProbResult, SearchResult, SourceSpec } from '../workers/protocol';
+import type { AlertResult, DeploymentOut, HeatResult, ProbResult, SearchResult, SegmentsResult, SourceSpec } from '../workers/protocol';
 import { useStore, type State } from './store';
 
 let client: ComputeClient | null = null;
@@ -530,10 +530,12 @@ export async function deployTeams() {
   // until the wind is confirmed on site, and unless the forecast looks trustworthy, hedge one team
   // onto the most likely ground
   const hedge = onsiteWind === null && MISSIONS[mission].source === 'lkp' && windConfidenceAt(time)?.level !== 'good';
+  const mode = get().assignMode;
   await syncSpread();
   const deps = await withBusy('Deploying teams', () =>
-    worker().call<DeploymentOut[]>({ type: 'deploy', t: time, teams, hedge }, progress('Deploying teams')),
+    worker().call<DeploymentOut[]>({ type: 'deploy', t: time, teams, hedge, mode }, progress('Deploying teams')),
   );
+  if (deps && mode === 'segments') await refreshSegments();
   if (deps) {
     set({ deployments: deps, layers: { ...get().layers, teams: true } });
     if (deps.length < teams) get().toast(deps.length === 0 ? 'No useful start points: no reachable ground gets this scent at this time.' : `Only ${deps.length} useful start point${deps.length > 1 ? 's' : ''} found; more teams would cover almost nothing.`, 'warn');
@@ -570,11 +572,74 @@ export async function addAlert(lx: number, ly: number) {
 
 let searchId = 1;
 
+/** Score every search segment for a dog team at the time bar's time. */
+export async function refreshSegments() {
+  const { time } = get();
+  await syncSpread();
+  const r = await withBusy('Scoring segments', () => worker().call<SegmentsResult>({ type: 'segments', t: time }, progress('Scoring segments')));
+  if (r) set({ segments: { ...r, probVersion: get().probVersion, windVersion: get().windVersion } });
+}
+
+/** Mark a whole segment searched with no alert, over the hours one team needs for it (0.5–3 h). */
+export async function markSegmentSearched(index: number) {
+  const seg = get().segments;
+  if (!seg) return;
+  const ring = seg.rings[index]?.[0];
+  const info = seg.segs.find((s) => s.index === index);
+  if (!ring || !info) return;
+  await markSearched({ kind: 'polygon', xs: ring.map((p) => p[0]), ys: ring.map((p) => p[1]) }, Math.min(3, Math.max(0.5, info.hours)));
+  await refreshSegments();
+}
+
+/**
+ * Debrief from a team's GPS track (GPX): the corridor it walked counts as searched over the
+ * track's time span, and waypoints named as alerts are logged as alerts at their times.
+ */
+export async function importSearchTrack(text: string, file: string) {
+  const b = get().bundle;
+  if (!b) return;
+  const zone = zoneFromCrs(b.detail.meta.crs);
+  if (!zone) {
+    get().toast('This area is not on a UTM grid; GPX import needs one.', 'warn');
+    return;
+  }
+  const g = parseGpx(text);
+  const off = b.config.utcOffsetSeconds;
+  const loc = (p: GpxPoint) => {
+    const u = latLonToUtm(p.lat, p.lon, zone);
+    return { x: u.e - b.frame.cx, y: u.n - b.frame.cy, t: p.time === null ? null : localHour(p.time, off) };
+  };
+  const pts = thinTrack(g.track.map(loc), 20).filter((p) => cellAtLocal(p.x, p.y) >= 0);
+  if (pts.length < 2) {
+    get().toast(`${file}: no track inside the focus square.`, 'warn');
+    return;
+  }
+  const times = pts.map((p) => p.t).filter((t): t is number => t !== null);
+  const c = b.config;
+  const clamp = (t: number) => Math.min(Math.max(t, c.startHour), c.endHour);
+  const t1 = times.length ? clamp(Math.max(...times)) : get().time;
+  const t0 = times.length ? clamp(Math.min(...times)) : t1 - get().searchDraft.windowMin / 60;
+  const sector: SectorShape = { kind: 'track', xs: pts.map((p) => p.x), ys: pts.map((p) => p.y), radius: HOTSPOTS.nearRadiusM };
+  const keepTime = get().time;
+  set({ time: t1 });
+  await markSearched(sector, Math.max(0.25, t1 - t0));
+  // alerts in the track file are logged at their own times
+  const named = g.waypoints.filter((w) => w.name && /alert|indicat/i.test(w.name));
+  for (const w of named) {
+    const p = loc(w);
+    if (cellAtLocal(p.x, p.y) < 0) continue;
+    set({ time: p.t !== null ? clamp(p.t) : t1 });
+    await addAlert(p.x, p.y);
+  }
+  set({ time: keepTime });
+  get().toast(`${file}: ${pts.length} track points searched ${fmtTime(t0)} to ${fmtTime(t1)}${named.length ? `, ${named.length} alert${named.length > 1 ? 's' : ''} logged` : ''}.`, 'success');
+}
+
 /** Mark a sector searched with no alert over the window ending at the slider time. */
-export async function markSearched(sector: SectorShape) {
+export async function markSearched(sector: SectorShape, windowH?: number) {
   const { time, searchDraft, bundle } = get();
   const t1 = time;
-  const t0 = Math.max(bundle?.config.startHour ?? TIME.start, t1 - searchDraft.windowMin / 60);
+  const t0 = Math.max(bundle?.config.startHour ?? TIME.start, t1 - (windowH ?? searchDraft.windowMin / 60));
   if (t1 - t0 < 0.2) {
     get().toast('Move the time slider later: the search window must end after the first modelled hour.', 'warn');
     return;
@@ -610,7 +675,7 @@ export function finishPolygon(): Promise<void> | void {
 
 export async function resetSearch() {
   const p = await withBusy('Reset', () => worker().call<ProbResult>({ type: 'resetSearch' }));
-  set({ alerts: [], searched: [], revealed: false, deployments: [] });
+  set({ alerts: [], searched: [], revealed: false, deployments: [], segments: null });
   if (p) applyProb(p);
   refreshSuggestions();
 }

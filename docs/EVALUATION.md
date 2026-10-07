@@ -5,8 +5,9 @@ This page covers how far the model has been checked, what the checks found, and 
 Short version:
 - The scent physics matches standard plume-spread curves.
 - The person-location model now uses published lost-person statistics.
-- In simulation, scent-aware placement covers about three times more probability than the best wind-blind plan when the forecast direction is right. Most of that edge is gone once the direction is 20–30° off.
-- The planner therefore rates its confidence in the wind and hedges when that confidence is low.
+- Detection is calibrated so the model's sweep width matches the field-measured 95 m for air-scent dog teams. That check exposed and fixed two errors in how detection was computed.
+- Teams are assigned to whole search segments by default, as real dog teams are. In simulation that is far more robust to wind error than points and routes. Using scent to choose and time segments adds about 4–8 points over choosing the most likely segments, unless the wind is badly wrong.
+- The planner rates its confidence in the wind and hedges when that confidence is low.
 - It has **not** been checked against real dogs. [FIELD_TRIALS.md](FIELD_TRIALS.md) gives the protocol and the planner has the tool to do it.
 
 Run it yourself:
@@ -37,58 +38,72 @@ Results go to `frontend/scripts/evaluation-results.json` and the log to `fronten
 | Field-trial scoring | GPX parsing, AUC, time zones | Matches hand-worked examples |
 | Grid references | UTM and USNG against PROJ and an independent MGRS library | Under 1 cm; strings match exactly |
 
-## 2. Does the plan beat simpler plans? (`scripts/evaluate.ts`)
+## 2. Calibration against a field measurement, and two fixes it exposed
+
+**Sweep width** (`scripts/sweepwidth.ts`). Effective sweep width (ESW) is ∫ P(detect | team passes at lateral range x) dx: roughly the strip a team effectively clears as it goes by. Four air-scent dog teams in field trials had a mean ESW of **95 m** (95% CI 44–145; Chiacchia, Houlahan & Hostetter 2015). The script walks a team past one person at every offset, at directions spread around the wind, in reference conditions, and integrates the model's detection (× 0.7).
+
+Checking this found two real problems in how detection was computed:
+
+1. **Block resolution.** Scent is tracked in 50 m blocks, but a plume a few hundred metres from a person is only tens of metres wide. So the block total hardly fell with distance: the reference plume was flat from 75 m to 325 m. That turned detection into a noisy on/off switch. Each block total is now converted to the peak a dog meets when it crosses the plume, using the Briggs plume width for that distance and stability class (`peakFactor`).
+2. **Normalization.** Contributions were scaled per simulated particle. That made them depend on how long particles stay on the grid: the small calibration grid recycled particles quickly and read about 2× stronger. They are now scaled per release of scent (`normalizeContrib`), so a person's plume has the same strength wherever they are.
+
+Results after the fixes (d50 = 200 m):
+
+| Close-range setting | Model ESW |
+| --- | --- |
+| None (scent alone) | 78 m |
+| 150 m at 0.6 (the previous default) | 147 m: above the measured range |
+| **60 m at 0.6 (new default)** | **~94 m** |
+
+The truth worlds in section 3 use the corrected detection, so the earlier route-plan numbers are superseded.
+
+## 3. Does the plan beat simpler plans? (`scripts/evaluate.ts`)
 
 **Setup:**
-- The demo area at 19:00, with three teams and the "child 7–12" profile.
-- The planner works from the forecast wind (WindNinja).
-- Each "true world" rotates the wind by an error angle (random sign), scales its speed by 0.7–1.3, and re-runs the scent as a single realization with its own turbulence. There are 8 worlds per error angle.
+- The demo area at 19:00, with three teams and the "child 7–12" profile. This hour rates "fair" for wind confidence (1.6 m/s, models 17° apart).
+- The planner works from the forecast wind. Each true world rotates it by the error angle (random sign), scales its speed by 0.7–1.3, and re-runs the scent as one realization. There are 8 worlds per angle.
+- **Route plans:** each team works about 600 m upwind from its start in the true wind, with close range along the route.
+- **Segment plans:** each team searches its whole segment. It finds people inside at the search-theory POD, and people outside through scent drifting in under the true wind.
+- **Success** = Σ P(person there) × P(found), as a percentage of the probability in the focus square. Figures are means across worlds; ± is the standard deviation where it matters.
 
-**How a plan is scored in a true world:**
-- Each team starts where the plan says and works about 600 m upwind in the **true** wind. A handler follows the wind they feel, not the forecast.
-- It finds a person at each possible location with probability 0.7 × the best single-person detection along its route, or close-range detection within 150 m of it.
-- Detection uses the physical (single-plume) calibration.
-- **Success** = Σ P(person there) × P(at least one team finds them).
-- Figures are the percentage of the probability inside the 3 km focus square: a mean ± the standard deviation across worlds.
-
-| Plan | 0° error | 15° | 30° | 45° | 90° | Mean |
+| Plan | 0° | 15° | 30° | 45° | 90° | Mean |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Scentline, app rule** (this wind rates "fair": ±35° planning + 1 hedge team) | 35.8 ± 3.0 | 25.9 ± 9.8 | **17.7 ± 1.7** | 11.9 ± 0.5 | 9.1 | **20.1** |
-| All teams by scent, ±20° planning | **39.5 ± 3.8** | 24.1 ± 1.3 | 12.1 | 8.7 | 7.6 | 18.4 |
-| All teams by scent, ±35° planning | 37.7 ± 2.8 | **27.7 ± 8.0** | 13.6 ± 4.9 | 11.2 | 9.1 | 19.9 |
-| 2 by scent + 1 hedge, ±20° planning | 35.1 ± 3.1 | 24.7 ± 1.2 | 14.2 ± 4.9 | 8.6 | 7.6 | 18.0 |
-| All by scent, starts planned without routes | 38.4 ± 3.3 | 27.2 ± 1.9 | 12.7 | 10.1 | 9.1 | 19.5 |
-| Most-likely ground (no scent) | 13.8 | 14.3 ± 1.2 | 17.3 ± 2.8 | **14.1 ± 2.9** | **10.8** | 14.1 |
-| Straight downwind of the LKP | 9.6 | 8.9 | 10.7 ± 2.4 | 11.5 ± 3.4 | 10.8 ± 4.1 | 10.3 |
-| Ring at 400 m around the LKP | 4.6 | 5.9 | 7.9 | 6.3 | 7.6 | 6.5 |
-| Random within 1.5 km (30 draws) | 4.2 | 4.2 | 4.0 | 3.5 | 3.5 | 3.9 |
-| Oracle (plans with the true wind) | 38.2 | 39.1 | 33.1 | 26.3 | 16.4 | 30.6 |
+| **Segments, app rule** (~2.3 h each) | **56.1 ± 2.0** | **54.8 ± 1.1** | **50.1 ± 1.7** | **45.4 ± 3.3** | 30.3 ± 1.8 | **47.3** |
+| Segments, most likely 3 (no scent) | 48.1 | 47.9 | 43.5 | 41.7 | **35.0** | 43.2 |
+| 1-hour segments, by scent | 47.5 ± 2.8 | 45.6 ± 1.3 | 40.1 ± 4.5 | 33.5 ± 7.0 | 21.5 ± 3.5 | 37.6 |
+| 1-hour segments, most likely 3 | 40.5 | 40.4 | 38.8 | 36.4 | 27.6 | 36.7 |
+| Routes, app rule (±35° + hedge) | 40.8 ± 2.7 | 28.0 ± 10.4 | 11.6 ± 2.8 | 8.7 | 5.8 | 19.0 |
+| Routes, all by scent ±20° | 41.8 ± 3.5 | 28.7 ± 9.9 | 9.5 ± 4.2 | 6.4 | 3.6 | 18.0 |
+| Routes, all by scent ±35° | 40.1 | 26.9 | 11.4 | 10.0 | 6.6 | 19.0 |
+| Routes, 2 by scent + 1 hedge ±20° | 44.2 | 29.4 | 8.8 | 6.2 | 3.6 | 18.4 |
+| Most-likely points (no scent) | 9.2 | 9.3 | 7.8 | 11.4 | 8.9 | 9.3 |
+| Straight downwind of the LKP | 8.4 | 7.2 | 9.0 | 11.9 | 8.1 | 8.9 |
+| Ring at 400 m around the LKP | 3.1 | 4.9 | 7.3 | 7.4 | 6.8 | 5.9 |
+| Random within 1.5 km | 3.0 | 3.0 | 2.9 | 2.4 | 2.4 | 2.7 |
+| Oracle route plan (true wind) | 40.8 | 42.3 | 37.4 | 30.2 | 15.9 | 33.3 |
 
 **Reading it:**
-- **With the right wind direction, scent-based placement covers almost three times what the best wind-blind plan does** (39.5% vs 13.8%), and matches the oracle. The oracle scoring slightly lower at 0° is noise: it plans from a single noisy run.
-- **The edge falls fast with direction error.** Real plumes at dusk are narrow (tens of metres wide at a few hundred metres), so a 15° error moves a plume about 130 m sideways at 500 m. At 30° and beyond, putting teams on the most likely ground does about as well or better. Measured wind matters more than anything else.
-- **The app's rule does best on average.** It rates the wind (light, models disagreeing, or turning means not reliable). When the wind isn't reliable, it plans with a wider ±35° spread and puts one of three teams on the likely ground. It gives up about 4 points with a perfect forecast and gains 4–6 points at 30–45°. With a reliable or measured wind, it plans all teams by scent at ±20°.
-- **Planning routes did not measurably help** compared with planning start points only and then walking upwind (19.5% vs 18.4% mean, within noise). Routes are still useful output: they show the team where the start leads. The ±9.8 standard deviation at 15° shows the all-or-nothing nature of narrow plumes: in some worlds a team sits in the plume, in others it misses.
-- **The absolute percentages depend on the assumed dog range** (d50 = 200 m) and on 0.7 for acting on a detection. Neither is measured, so read the table for comparisons between plans, not as real-world find rates. Field trials set these numbers.
+- **Assigning whole segments, as real dog teams are tasked, is far more robust to wind error than points and routes.** A team that searches its segment finds people inside it whatever the wind. At 45° of error segments still cover 45% where route plans cover under 10%. Segments are also more effort (about 2.3 team-hours against 1). But even 1-hour segments, which match a route's effort, beat routes and hold up far better.
+- **Scent's main value is in choosing and timing segments, not in finding a magic point.** Choosing segments with scent adds 6–8 points over choosing the most likely segments when the wind is within about 30°, and 4 points at 45°, but costs 5 points at 90°. On average it gains 4 points (47.3% vs 43.2%). Classic planning by POA is already a strong baseline; scent refines it. The per-segment entry edge, heading and best hour come on top and aren't scored here.
+- **The app rule** (±35° spread and one hedge team when the wind isn't reliable) picked the same segments as all-by-scent here, D2, E3 and D3; the hedge team's choice, D3, is also a scent pick.
+- **The scores scale with assumptions that aren't measured yet:** the 50% average segment POD in neutral conditions (NASAR's working figure), d50 = 200 m and 0.7 for acting on a detection. Read the table for comparisons between plans.
 
-**Planning ensemble width** (all teams by scent): ±20° gives a mean of 18.4%, ±35° 19.9%, ±50° 19.7%. With absolute detection, a wider spread is a real hedge against direction error. (The earlier relative-detection model showed the opposite, an artifact of that model.)
+**Planning ensemble width** (route plans): ±20° gives a mean of 18.0%, ±35° 19.0%, ±50° 18.3%. With a wind that isn't reliable the planner uses ±35°.
 
-**Sensitivity** (15° error, all by scent at ±20°, base 29.6%). Each assumption was changed, the plan rebuilt, and the result scored against the base truth:
+**Sensitivity** (route plan, 15° error, ±20°, base 31.3%): changing any single assumption moves starts by at most about 170 m and success by at most 1 point.
 
 | Assumption changed | Start points move | Success |
 | --- | --- | --- |
-| Scent decay time 15 / 60 min | 60 / 144 m | 28.2 / 27.0% |
-| Plume spread ×0.5 / ×2 | 158 / 161 m | 26.5 / 26.6% |
-| Turbulence memory 300 / 1200 s | 3 / 7 m | 29.5 / 29.5% |
-| Acting on a detection 50% / 90% | 0 / 127 m | 29.6 / 28.4% |
-| Dog range d50 120 / 320 m | 114 / 150 m | 28.5 / 27.7% |
-| Route length 300 / 1000 m | 0 / 0 m | 29.6 / 29.6% |
-| Close-range detectability 0.3 / 0.9 | 0 / 39 m | 29.6 / 28.0% |
-| Team spacing 150 / 500 m | 31 / 168 m | 33.3 / 28.4% |
+| Scent decay time 15 / 60 min | 90 / 66 m | 31.6 / 30.2% |
+| Plume spread ×0.5 / ×2 | 143 / 31 m | 31.8 / 30.4% |
+| Turbulence memory 300 / 1200 s | 56 / 109 m | 31.3 / 30.7% |
+| Acting on a detection 50% / 90% | 0 / 162 m | 31.3 / 30.7% |
+| Dog range d50 120 / 320 m | 32 / 60 m | 31.8 / 30.3% |
+| Route length 300 / 1000 m | 32 / 0 m | 31.8 / 31.3% |
+| Close-range detectability 0.3 / 0.9 | 0 / 0 m | 31.3 / 31.3% |
+| Team spacing 150 / 500 m | 18 / 173 m | 31.5 / 31.3% |
 
-No single assumption moves a start more than about 170 m or costs more than about 3 points. Getting the plume width wrong (either way) costs the most, which is why it is calibrated to the Briggs curves. Tighter spacing (150 m) did better here; that is about how close teams can work without interfering, an operational call, and the default stays 300 m.
-
-## 3. Where the person might be (probability map)
+## 4. Where the person might be (probability map)
 
 **Distances, now sourced.** Log-normals fitted to published quartiles; spread = ln(Q75/Q25) / 1.349.
 
@@ -121,19 +136,22 @@ These replace the earlier invented "trail pull". They apply within each profile'
 
 **Coverage gaps.** The 3 km focus square holds 69–72% of the probability in the demo. The planner warns when it holds under half, and gives each profile's share beyond the modelled area.
 
-## 4. Limitations: what this can't show
+## 5. Limitations: what this can't show
 
 - **Circularity:** the true worlds use the same physics as the planner, with the wind changed. This tests robustness to wind error, not whether the physics is right. Only field data can, which is what the trial tool is for.
 - **Dog range and acting on a detection** (d50 = 200 m, 0.7) are assumptions, and the absolute success figures scale with them.
-- **Close range is a 150 m corridor along the route.** Sweep width, quartering pattern and time on task aren't modelled; neither are ground scent or trailing dogs.
+- **Inside a segment, POD is search theory** calibrated to NASAR's 50% average, scaled with scent conditions. Vegetation and terrain don't change it yet, and responsive and unresponsive subjects aren't separated. Ground scent and trailing dogs aren't modelled.
+- **Drift credit:** a no-alert search lowers upwind ground at half weight. That's a judgement made to avoid clearing ground on the strength of a wrong wind.
+- **Block resolution:** detection is at 50 m receiver blocks with 100 m source blocks, so a source means "someone in this 100 m square". The peak-concentration correction assumes the dog crosses the plume within the block.
 - **Wind confidence thresholds** (1 and 2 m/s, 25/45° model disagreement, 30/60° turning) are reasoned, not fitted. WindNinja hasn't been compared with weather stations here.
 - **Distance data:** the child figures cover all ages under 13 together, and the dementia figures are for flat terrain. ISRID has finer tables (by age band and terrain) in *Lost Person Behavior* (Koester 2008), which should replace these when available.
 - **Injured vs uninjured:** the terrain multipliers are for uninjured subjects. Injured people are found even more often near trails (×7) and streams (×3.5).
 
-## 5. Next steps, in order of value
+## 6. Next steps, in order of value
 
 1. **Field trials with a K9 unit** ([FIELD_TRIALS.md](FIELD_TRIALS.md)): 20–30 training runs scored with the planner's GPX import. They test the physics and set the dog's range.
 2. **Wind validation:** compare WindNinja and the fallback against RAWS / MesoWest stations near past incidents, and fit the confidence thresholds to the real direction errors.
 3. **Finer ISRID tables:** age bands, terrain types and the injured/uninjured split, from *Lost Person Behavior*.
 4. **Expert review** of the hedge rule and defaults by K9 handlers and an incident planner.
-5. **Search-theory effort allocation:** sectors, sweep width and probability of success per hour.
+5. **Segment effort allocation over time:** several operational periods, cumulative POD and when to re-search a segment (rather than one assignment at a time).
+6. **Alert-pattern clues:** looping-plume alert lines and night alerts at one elevation (fanning plumes) as extra evidence in the back-trace.

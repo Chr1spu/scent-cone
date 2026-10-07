@@ -5,13 +5,35 @@ import type { ReceiverDetection } from './detection';
 import type { DetThresholds } from './hotspots';
 import type { BlockIndex } from './scent';
 
-/** A searched area: a circle around a point, or a polygon (local metres). */
+/**
+ * A searched area: a circle around a point, a polygon, or the corridor along a team's GPS track
+ * (local metres).
+ */
 export type SearchedSector =
   | { kind: 'circle'; x: number; y: number; radius: number }
-  | { kind: 'polygon'; xs: number[]; ys: number[] };
+  | { kind: 'polygon'; xs: number[]; ys: number[] }
+  | { kind: 'track'; xs: number[]; ys: number[]; radius: number };
+
+/** Distance from a point to a polyline. */
+function distToPolyline(xs: number[], ys: number[], x: number, y: number): number {
+  let best = Infinity;
+  for (let i = 0; i < xs.length; i++) {
+    if (i + 1 >= xs.length) {
+      best = Math.min(best, Math.hypot(x - xs[i], y - ys[i]));
+      break;
+    }
+    const dx = xs[i + 1] - xs[i];
+    const dy = ys[i + 1] - ys[i];
+    const l2 = dx * dx + dy * dy;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((x - xs[i]) * dx + (y - ys[i]) * dy) / l2)) : 0;
+    best = Math.min(best, Math.hypot(x - xs[i] - t * dx, y - ys[i] - t * dy));
+  }
+  return best;
+}
 
 export function sectorContains(s: SearchedSector, x: number, y: number): boolean {
   if (s.kind === 'circle') return Math.hypot(x - s.x, y - s.y) <= s.radius;
+  if (s.kind === 'track') return distToPolyline(s.xs, s.ys, x, y) <= s.radius;
   let inside = false;
   for (let i = 0, j = s.xs.length - 1; i < s.xs.length; j = i++) {
     const yi = s.ys[i];
@@ -38,6 +60,8 @@ export interface SearchUpdateInput {
   map: GridMap;
   /** chance a dog detects what reaches it (default HOTSPOTS.dogPOD) */
   pod?: number;
+  /** detection for people inside the searched area (search-theory coverage), default HOTSPOTS.nearDet */
+  insideDet?: number;
 }
 
 export interface SearchUpdateResult {
@@ -65,10 +89,10 @@ function srcCenter(b: BlockIndex, m: GridMap, s: number): [number, number] {
 }
 
 /**
- * POD(source) = 0.7 × the best single-person detection anywhere in the searched area (the dog
- * passed through scent that strong), and at least 0.7 × close-range detectability for sources
- * inside the area itself (the dog walked there). The recheck flag uses scent conditions (heat
- * against the reference thresholds) across the area.
+ * POD(source): inside the searched area, 0.7 × the search-theory detection for that effort and
+ * scent conditions (the team searched it); outside, 0.7 × the best single-person detection the
+ * team passed through × SEARCH.driftCredit (scent that should have reached it, discounted because
+ * it depends on the modelled wind). The recheck flag uses scent conditions across the area.
  */
 export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
   const { sector, blocks: b, heatRecv, th, map } = inp;
@@ -91,11 +115,19 @@ export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
   for (const r of inArea) detSum += smoothstep(th.lo, th.hi, heatRecv[r]);
   const meanDet = detSum / inArea.length;
   const podSrc = new Float32Array(b.nSrc);
-  for (const r of inArea) for (let k = inp.det.start[r]; k < inp.det.start[r + 1]; k++) podSrc[inp.det.src[k]] = Math.max(podSrc[inp.det.src[k]], POD * inp.det.det[k]);
+  const inside = new Uint8Array(b.nSrc);
   for (let s = 0; s < b.nSrc; s++) {
     const [sx, sy] = srcCenter(b, map, s);
-    if (sectorContains(sector, sx, sy)) podSrc[s] = Math.max(podSrc[s], POD * HOTSPOTS.nearDet);
+    inside[s] = sectorContains(sector, sx, sy) ? 1 : 0;
   }
+  // outside the area: scent that should have drifted to the team, only partly credited
+  for (const r of inArea)
+    for (let k = inp.det.start[r]; k < inp.det.start[r + 1]; k++) {
+      const s = inp.det.src[k];
+      if (!inside[s]) podSrc[s] = Math.max(podSrc[s], POD * inp.det.det[k] * SEARCH.driftCredit);
+    }
+  // inside: the team searched it
+  for (let s = 0; s < b.nSrc; s++) if (inside[s]) podSrc[s] = POD * (inp.insideDet ?? HOTSPOTS.nearDet);
   const factor = new Float32Array(b.srcOf.length);
   for (let i = 0; i < factor.length; i++) factor[i] = 1 - podSrc[b.srcOf[i]];
   return { factor, podSrc, meanDet, recheck: meanDet < SEARCH.recheckDet };

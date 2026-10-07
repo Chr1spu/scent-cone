@@ -1,4 +1,4 @@
-import { DETECTION, DISPERSION, ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, TERRAIN, TRIANGULATION, TURBULENCE, WIND_CONFIDENCE, type ProfileId } from '../config/modelParams';
+import { DETECTION, DISPERSION, ENSEMBLE, HOTSPOTS, NOSE, PROBABILITY, PROFILES, SCENT, SEARCH, SEGMENTS, TERRAIN, TRIANGULATION, TURBULENCE, WIND_CONFIDENCE, type ProfileId } from '../config/modelParams';
 import { MISSIONS, visibleMissions, type SourceKind } from '../config/missions';
 import { noseWindFactor, LC } from '../models/terrainInfo';
 import { Link } from '../router';
@@ -229,11 +229,46 @@ export function Method() {
             the field trials). Because detection is absolute, a hot, sunny afternoon really does lower it.
           </p>
           <p>
+            Scent is tracked in 50 m blocks, but a plume a few hundred metres from a person is often only tens of metres wide. A dog crossing the block meets the plume&apos;s peak, not the
+            block average, so each block total is converted to a peak using the plume width for that distance and stability class (the same Briggs curves the turbulence follows).
+            Contributions are counted per release of scent, so a person&apos;s plume has the same strength wherever they are on the map. Close-range detection ({HOTSPOTS.nearDet} within{' '}
+            {HOTSPOTS.nearRadiusM} m) is sized so that, with the {DETECTION.d50M} m range, a team passing a person has an effective sweep width of about 94 m in reference conditions:
+            the field-measured value for air-scent dog teams is 95 m (Chiacchia et al. 2015).
+          </p>
+          <p>
             The heatmap shows all the scent together, weighted by probability. The time bar compares it with a neutral-conditions reference run ({pct(HOTSPOTS.detLoPct)}–
             {pct(HOTSPOTS.detHiPct)} percentile thresholds), which is what the scent-quality label and the searched-area recheck flag use.
           </p>
 
           <h2 id="deploy">5. Deploying teams</h2>
+          <p>
+            <strong>Segments (the default).</strong> Dog teams are normally given a search segment, not a point: an area one team can cover in a few hours, with edges a team can
+            recognise on the ground, and the handler picks the pattern inside after checking the wind at the edge. Scentline cuts the focus square into segments of about{' '}
+            {Math.round(SEGMENTS.targetM2 / 4046.86)} acres (about {(SEGMENTS.targetM2 / SEGMENTS.teamRateM2PerH).toFixed(1)} team-hours at {(SEGMENTS.teamRateM2PerH / 1e6).toFixed(2)}{' '}
+            km² an hour, the pace of NASAR area-search tests) whose edges follow trails, roads, streams and ridgelines, named like ICS assignments (A1, A2, … from the north). For a
+            dog team at the planned time, each segment gets:
+          </p>
+          <ul>
+            <li>
+              <strong>POA</strong>, the share of the probability inside it;
+            </li>
+            <li>
+              <strong>POD</strong> for a person in it: 1 − e<sup>−coverage</sup>, the search-theory form, with coverage scaled by how much scent is about compared with neutral conditions.
+              It averages {pct(HOTSPOTS.dogPOD * (1 - Math.exp(-SEGMENTS.coverageRef)))} in neutral conditions, the working average NASAR uses for a dog team;
+            </li>
+            <li>
+              <strong>Finds</strong>, what one team would find: POA × POD, plus people outside whose scent drifts in (single-person detection, as above);
+            </li>
+            <li>the entry point on its downwind edge, the heading into the wind, the hours one team needs and its best hour.</li>
+          </ul>
+          <p>
+            Teams are given the segments that add the most finds, each discounting what the earlier teams cover. The segment table in the Plan tab lists every segment this way, with
+            the cumulative POD from searches already logged, and flags a segment searched in the last {SEGMENTS.clearAirMin} minutes: a dog needs the air clear of other searchers
+            first.
+          </p>
+          <p>
+            <strong>Start points</strong> (the other option, for hasty searches) work as follows.
+          </p>
           <p>
             While the scent runs, the model records which source areas (100 m blocks) send scent to which possible team positions (50 m blocks). Each candidate start gets a route: about{' '}
             {HOTSPOTS.routeM} m upwind, following the modelled wind as it bends (dogs work into the wind), stopping at water, cliffs or calm air. The team covers each possible location
@@ -271,9 +306,10 @@ export function Method() {
           </p>
           <TriangulationDiagram />
           <p className="!mt-4">
-            <strong>Searched with no alert.</strong> For a circle or polygon searched over a chosen window, each source area&apos;s probability is multiplied by 1 − POD, where POD ={' '}
-            {pct(HOTSPOTS.dogPOD)} × the best detection of that source anywhere in the area (as for teams), and at least {pct(HOTSPOTS.dogPOD)} × {HOTSPOTS.nearDet} for sources inside
-            it. Areas searched while detectability was under{' '}
+            <strong>Searched with no alert.</strong> For a circle, polygon, segment or imported GPS track (a corridor {HOTSPOTS.nearRadiusM} m either side) searched over a window,
+            each source area&apos;s probability is multiplied by 1 − POD. Inside the area, POD is the search-theory value for those scent conditions. Outside it, POD comes from scent
+            that should have drifted to the team, counted at only {pct(SEARCH.driftCredit)}: that inference depends on the modelled wind, and wrongly clearing ground is the costly
+            mistake. Areas searched while detectability was under{' '}
             {SEARCH.recheckDet} are flagged for a recheck.
           </p>
 

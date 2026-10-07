@@ -11,10 +11,10 @@
  * distance straight downwind at which a dog detects that person half the time. Beyond that it is a
  * logistic in log-concentration, 0.9 at half the distance and 0.1 at twice it.
  */
-import { DETECTION, ENSEMBLE, HOTSPOTS } from '../config/modelParams';
+import { DETECTION, ENSEMBLE, HOTSPOTS, TURBULENCE } from '../config/modelParams';
 import { frameOf, type GridMeta } from '../geo/grid';
 import type { Place, Weather } from './env';
-import { blockIndex, runEnsemble, type BlockIndex } from './scent';
+import { blockIndex, normalizeContrib, runEnsemble, type BlockIndex } from './scent';
 import { buildTerrainInfo, LC } from './terrainInfo';
 import type { WindField } from './wind';
 
@@ -28,6 +28,29 @@ export interface DetectionCurve {
 }
 
 const cache = new Map<string, DetectionCurve>();
+
+/**
+ * Block totals -> peak concentration. Scent is tracked per 50 m receiver block, but a plume a few
+ * hundred metres from a person is often only tens of metres wide, so a block total barely changes
+ * with distance while the concentration a dog meets in the plume falls roughly as 1/width. The
+ * dog crosses the plume as it works the block, so what matters is the peak: block mean × block
+ * width / (√(2π)·σy), with σy from the Briggs curve the turbulence model is calibrated to (a for
+ * the stability class), never below one cell and never above the block.
+ */
+export function peakFactor(distM: number, sigmaA: number, cellM: number, blockM: number): number {
+  const x = Math.max(distM, cellM);
+  const sigma = Math.max(cellM / 2, sigmaA * x * Math.pow(1 + 0.0001 * x, -0.5));
+  return Math.min(blockM / cellM, Math.max(1, blockM / (Math.sqrt(2 * Math.PI) * sigma)));
+}
+
+/** Distance (m) between receiver block r and source block s centres. */
+export function blockDistance(b: BlockIndex, r: number, s: number, cellM: number): number {
+  const rx = (r % b.recvCols) * b.recvBlock + (b.recvBlock - 1) / 2;
+  const ry = Math.floor(r / b.recvCols) * b.recvBlock + (b.recvBlock - 1) / 2;
+  const sx = (s % b.srcCols) * b.srcBlock + (b.srcBlock - 1) / 2;
+  const sy = Math.floor(s / b.srcCols) * b.srcBlock + (b.srcBlock - 1) / 2;
+  return Math.hypot(rx - sx, ry - sy) * cellM;
+}
 
 /**
  * Reference single-person plume, measured with the production block layout.
@@ -62,18 +85,29 @@ export function calibrateDetection(opts: { d50M?: number; particles?: number; me
   // the person: one source block, west edge, middle row
   const blocks: BlockIndex = blockIndex(cols, rows, rb, sb);
   const prob = new Float32Array(cols * rows);
-  const r0 = rows / 2 - sb / 2;
+  const r0 = Math.floor(rows / 2 / sb) * sb; // aligned to a source block, so the block holds all of it
   for (let r = r0; r < r0 + sb; r++) for (let c = 0; c < sb; c++) prob[r * cols + c] = 1 / (sb * sb);
   const src = blocks.srcOf[r0 * cols];
-  const { contrib } = runEnsemble({ ti, field, place, weather, prob, tEnd: 12, members, particles, blocks, neutral: true, seed: 7, rotDeg });
-  // centreline: strongest receiver in each column of receiver blocks
+  const { contrib } = normalizeContrib(runEnsemble({ ti, field, place, weather, prob, tEnd: 12, members, particles, blocks, neutral: true, seed: 7, rotDeg }), members, particles);
+  // centreline: in each column of receiver blocks, the plume core. The source block's centre lies
+  // on a receiver-block edge, so the plume splits between two blocks: take the best adjacent pair.
   const recvRows = blocks.nRecv / blocks.recvCols;
   const srcX = (sb - 1) / 2;
+  const sigmaA = TURBULENCE.briggsA.D; // reference: neutral, class D
   const profile: { d: number; c: number }[] = [];
   for (let rc = 0; rc < blocks.recvCols; rc++) {
     let best = 0;
-    for (let rr = 0; rr < recvRows; rr++) best = Math.max(best, contrib![(rr * blocks.recvCols + rc) * blocks.nSrc + src]);
-    profile.push({ d: (rc * rb + (rb - 1) / 2 - srcX) * cell, c: best });
+    let bestR = 0;
+    for (let rr = 0; rr + 1 < recvRows; rr++) {
+      const a = contrib![(rr * blocks.recvCols + rc) * blocks.nSrc + src] + contrib![((rr + 1) * blocks.recvCols + rc) * blocks.nSrc + src];
+      if (a > best) {
+        best = a;
+        bestR = rr;
+      }
+    }
+    const d = (rc * rb + (rb - 1) / 2 - srcX) * cell;
+    const dist = blockDistance(blocks, bestR * blocks.recvCols + rc, src, cell);
+    profile.push({ d, c: best * peakFactor(dist, sigmaA, cell, rb * cell) });
   }
   const lnAt = (d: number) => {
     const pts = profile.filter((p) => p.c > 0 && p.d > 0);
@@ -114,7 +148,18 @@ export interface ReceiverDetection {
  * Per team position, the sources it could detect (detection ≥ minDet). q_s is floored at
  * DETECTION.minQ so a barely-sampled source (a handful of particles) can't look like a full plume.
  */
-export function receiverDetection(contrib: Float32Array, q: Float32Array, b: BlockIndex, curve: DetectionCurve, minDet = 0.01): ReceiverDetection {
+export function receiverDetection(
+  contrib: Float32Array,
+  q: Float32Array,
+  b: BlockIndex,
+  curve: DetectionCurve,
+  minDet = 0.01,
+  /** Briggs coefficient for the current stability class (plume width), and the grid cell size */
+  opts: { sigmaA?: number; cellM?: number } = {},
+): ReceiverDetection {
+  const sigmaA = opts.sigmaA ?? TURBULENCE.briggsA.D;
+  const cellM = opts.cellM ?? 10;
+  const blockM = b.recvBlock * cellM;
   const start = new Int32Array(b.nRecv + 1);
   const src: number[] = [];
   const det: number[] = [];
@@ -126,7 +171,7 @@ export function receiverDetection(contrib: Float32Array, q: Float32Array, b: Blo
     for (let s = 0; s < b.nSrc; s++) {
       const c = contrib[off + s];
       if (c <= 0 || inv[s] === 0) continue;
-      const d = detectFromConc(c * inv[s], curve);
+      const d = detectFromConc(c * inv[s] * peakFactor(blockDistance(b, r, s, cellM), sigmaA, cellM, blockM), curve);
       if (d >= minDet) {
         src.push(s);
         det.push(d);

@@ -100,6 +100,7 @@ function ChildMarkerAt({ bundle, truthXY }: { bundle: AreaBundle; truthXY: [numb
 
 function outline(sector: SectorShape): [number, number][] {
   if (sector.kind === 'circle') return circlePts(sector.x, sector.y, sector.radius);
+  if (sector.kind === 'track') return sector.xs.map((x, i) => [x, sector.ys[i]] as [number, number]);
   const pts = sector.xs.map((x, i) => [x, sector.ys[i]] as [number, number]);
   return [...densify(pts), pts[0]];
 }

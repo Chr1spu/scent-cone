@@ -6,7 +6,7 @@ import { calibrateDetection, type ReceiverDetection } from './detection';
 import { deployableCells, greedyDeploy, nearSources, routeCoverage, sourceSums, traceRoute } from './hotspots';
 import { buildStaticLayers, barrierFactor, computeProbability, resampleToDetail } from './probability';
 import { backtrace, posterior } from './triangulation';
-import { blockIndex, createSim, makeStepEnv, runEnsemble, step, type StepEnv } from './scent';
+import { blockIndex, normalizeContrib, createSim, makeStepEnv, runEnsemble, step, type StepEnv } from './scent';
 import { buildTerrainInfo, LC, noseWindFactor, shadowMask, sunlitMask, type TerrainInfo } from './terrainInfo';
 import { computeFallbackWind, metToUV, sampleWind, smoothedGradients, timeSlot, uvToMet, IDENTITY_MEMBER, type WindField } from './wind';
 
@@ -234,7 +234,7 @@ describe('greedy deployment', () => {
     const field = uniformField(n, 0.4, 0.1);
     const prob = new Float32Array(n * n).fill(1 / (n * n));
     const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
-    const { heat, contrib } = runEnsemble({ ti, field, place, weather, prob, tEnd: 21, members: 2, particles: 3000, dt: 10, blocks });
+    const { heat, contrib } = normalizeContrib(runEnsemble({ ti, field, place, weather, prob, tEnd: 21, members: 2, particles: 3000, dt: 10, blocks }), 2, 3000);
     const windAt = () => ({ u: 0.4, v: 0.1 });
     const deps = greedyDeploy({ contrib: contrib!, blocks, curve: calibrateDetection(), windAt, heat, q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 4 });
     expect(deps.length).toBeGreaterThan(0);

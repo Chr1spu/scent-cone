@@ -7,7 +7,7 @@ const WALK = [
   { key: '3', title: 'Wind', text: 'Thin streaks show the WindNinja wind at this hour. Switch between WindNinja and the simpler fallback model in the top bar to compare them around the ridges.', image: 'step-wind.jpg' },
   { key: '4', title: 'Scent', text: 'Release scent: orange particles drift from every likely spot at dog-nose height. Press Play or drag the time bar and watch the flow turn downhill after sunset.', image: 'step-particles.jpg' },
   { key: '5', title: 'Heatmap', text: 'The heatmap is the scent of the last hour, averaged over several possible winds. Hotspots mark the strongest accumulations. The rating on the time bar compares scent with neutral conditions.', image: 'step-scent.jpg' },
-  { key: '6', title: 'Deploy teams', text: 'Deploy places each team where it covers the most probability, with an upwind heading and its best hour. The cards on the right show a score for every hour.', image: 'step-deploy.jpg' },
+  { key: '6', title: 'Deploy teams', text: 'Deploy gives each team a search segment (edges on trails, streams and ridges) with its entry point on the downwind edge, a heading into the wind and its best hour; the handler picks the pattern inside. The Plan tab lists every segment with its probability, POD and expected finds.', image: 'step-deploy.jpg' },
   { key: '7', title: 'Alerts', text: 'Choose Add alert and click the two radio markers: dogs alerted there at 15:15 and 17:45. Each alert traces the scent back an hour; the zones overlap where the child is, and the marker appears.', image: 'step-alerts.jpg' },
 ];
 
@@ -17,7 +17,9 @@ const CONTROLS: [string, string][] = [
   ['Raise / Lower', 'Click to double or halve the probability within 250 m, for local knowledge.'],
   ['Release scent', 'Starts the visible scent particles.'],
   ['Heatmap', 'Scent of the last hour and the hotspots. Recomputed when the time changes (about 2 s).'],
-  ['Teams, Deploy', 'Number of teams (1 to 6) and the deployment itself.'],
+  ['Teams, Deploy', 'Number of teams (1 to 6) and the deployment itself. Segments (default) assigns whole search segments; Start points gives each team a start and an upwind route, for hasty searches.'],
+  ['Segment table', 'Plan tab: every segment for a dog team at the time bar’s time, best first: POA, POD, expected finds, hours for one team, cumulative POD from searches logged, and a wait flag if it was searched in the last 30 minutes. “searched” marks a segment covered with no alert.'],
+  ['Import team track', 'Search log: a team’s GPX track from a GPS unit, collar or CalTopo. The corridor walked counts as searched over the track’s times, and ALERT waypoints are logged as alerts at their times.'],
   ['Time bar', 'An 8-hour forecast window in the area’s local time, starting when the person went missing (▲). Dragging it changes wind, sun, temperature and scent to that hour; it is a planning clock and does not follow the real clock. For searches running today, a green NOW marker shows the current time: click it to jump there.'],
   ['Read briefing', 'In the Plan tab after Deploy: reads every team’s start point, heading, wind, best hour and coverage aloud, ready to relay by radio. Spoken by Grok Voice when the server has an xAI key, otherwise by the browser’s voice.'],
   ['Add alert', 'Click where a dog alerted, at the time on the time bar.'],

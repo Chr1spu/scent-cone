@@ -46,6 +46,37 @@ export interface HeatResult {
   hotspots: number[];
 }
 
+/** One search segment scored for a dog team at a time (models/segments.ts). */
+export interface SegmentInfo {
+  index: number;
+  name: string;
+  areaM2: number;
+  /** shares of the total probability */
+  poa: number;
+  value: number;
+  fromOutside: number;
+  /** chance a team searching it finds a person who is in it */
+  podInside: number;
+  /** cumulative POD from searches logged so far (no alert) */
+  podSearched: number;
+  entry: [number, number];
+  upwind: [number, number];
+  windSpeed: number;
+  hours: number;
+  bestWindow: [number, number];
+  windowScores: { hour: number; score: number }[];
+}
+
+export interface SegmentsResult {
+  t: number;
+  /** segment per detail cell (-1 = none) */
+  id: Int32Array;
+  names: string[];
+  rings: [number, number][][][];
+  centroid: [number, number][];
+  segs: SegmentInfo[];
+}
+
 export interface DeploymentOut {
   team: number;
   x: number;
@@ -60,6 +91,8 @@ export interface DeploymentOut {
   kind?: 'scent' | 'ground';
   /** the route the team works, upwind from the start (local metres) */
   route?: [number, number][];
+  /** segment assignment: the team searches this whole segment, entering at (x, y) */
+  segment?: { index: number; name: string; areaM2: number; poa: number; podInside: number; hours: number; ring: [number, number][] };
 }
 
 export interface AlertResult {
@@ -83,7 +116,8 @@ export type Request =
   | { type: 'probability'; profile: ProfileId; lkp: [number, number]; elapsedH?: number; travelDir?: number | null }
   | { type: 'brush'; x: number; y: number; factor: number }
   | { type: 'heat'; t: number }
-  | { type: 'deploy'; t: number; teams: number; hedge?: boolean }
+  | { type: 'deploy'; t: number; teams: number; hedge?: boolean; mode?: 'segments' | 'points' }
+  | { type: 'segments'; t: number }
   | { type: 'alert'; x: number; y: number; t: number }
   | { type: 'searched'; sector: SearchedSector; t0: number; t1: number }
   | { type: 'resetSearch' }

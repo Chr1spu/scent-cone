@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from '../router';
-import { computeDetailAt, deployTeams, fmtTime, releaseScent, resetSearch, scheduleHeat, setOnsiteWind, windConfidenceAt } from '../state/controller';
+import { computeDetailAt, deployTeams, fmtTime, importSearchTrack, releaseScent, resetSearch, scheduleHeat, setOnsiteWind, windConfidenceAt } from '../state/controller';
 import { LAYER_LABELS, useStore, type LayerId, type Tool } from '../state/store';
 import { Icon } from '../ui/icons';
 import { SearchOptions } from './SearchOptions';
@@ -120,6 +120,7 @@ export function ControlPanel() {
             <Icon.Dog size={14} /> Deploy at {fmtTime(time)}
           </button>
         </div>
+        <AssignMode />
       </Section>
 
       <Section n={4} title="Search log" right={<button className="text-xs text-ink-3 underline hover:text-ink" onClick={resetSearch}>Reset</button>}>
@@ -133,6 +134,7 @@ export function ControlPanel() {
         </div>
         {tool === 'alert' && <p className="mt-1.5 text-xs text-ink-2">Click where a dog alerted. In the demo, the pink markers are radio reports.</p>}
         {tool === 'searched' && <SearchOptions />}
+        <TrackImport />
         {(alerts.length > 0 || searched.length > 0) && (
           <ol className="mt-2 divide-y divide-rule rounded-sm border border-rule bg-card text-xs">
             {[
@@ -227,5 +229,50 @@ function WindConfidenceNote({ measured }: { measured: boolean }) {
       {c.reasons.length > 0 ? ` (${c.reasons.join('; ')})` : ' (steady wind, models agree)'}.
       {c.level !== 'good' && ' Measure the wind at the start points before committing teams.'}
     </p>
+  );
+}
+
+/** Assign teams to whole search segments (how dog teams are tasked) or to start points with routes. */
+function AssignMode() {
+  const mode = useStore((s) => s.assignMode);
+  const set = useStore((s) => s.set);
+  return (
+    <div className="mt-1.5">
+      <div className="flex overflow-hidden rounded border border-rule text-xs">
+        {(
+          [
+            ['segments', 'Segments'],
+            ['points', 'Start points'],
+          ] as const
+        ).map(([m, label], i) => (
+          <button
+            key={m}
+            className={`flex-1 py-1 font-medium ${i ? 'border-l border-rule' : ''} ${mode === m ? 'bg-ink text-paper' : 'bg-paper text-ink-2'}`}
+            onClick={() => set({ assignMode: m, deployments: [] })}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1 text-xs leading-snug text-ink-3">
+        {mode === 'segments'
+          ? 'Each team gets a whole segment, edges on trails, streams and ridges; the handler picks the pattern. Scentline says which segments, where to enter and when.'
+          : 'Each team gets a start point and a route upwind (for a hasty search).'}
+      </p>
+    </div>
+  );
+}
+
+/** Debrief: a team's GPS track (and any alert waypoints) updates the map. */
+export function TrackImport() {
+  return (
+    <label className="btn btn-sm mt-1.5 w-full justify-center" title="GPX from a GPS unit, collar or CalTopo: the corridor walked counts as searched over the track's times; ALERT waypoints are logged as alerts">
+      Import team track (GPX)
+      <input type="file" accept=".gpx,application/gpx+xml" className="hidden" onChange={async (e) => {
+        const f = e.target.files?.[0];
+        if (f) await importSearchTrack(await f.text(), f.name);
+        e.target.value = '';
+      }} />
+    </label>
   );
 }

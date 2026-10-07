@@ -218,11 +218,13 @@ export const HOTSPOTS = {
   maxSourcesPerRecv: 50,
   dogPOD: 0.7,
   /**
-   * Close range: a team also works the ground around its start, and a dog finds a person it
-   * passes near even when drifted scent is weak. Heuristic: within 150 m (the default searched-
-   * sector radius), detectability at least 0.6, so POD ≈ 0.7 × 0.6 ≈ 0.4 there.
+   * Close range: a dog finds a person it passes near even when drifted scent is weak:
+   * detectability at least nearDet within nearRadiusM of a team's route. Calibrated with
+   * scripts/sweepwidth.ts so that, with d50 = 200 m, the model's effective sweep width in reference
+   * conditions is ~94 m, matching the field-measured 95 m for air-scent dog teams (95% CI 44–145;
+   * Chiacchia, Houlahan & Hostetter 2015). 150 m gave 147 m, above the measured range.
    */
-  nearRadiusM: 150,
+  nearRadiusM: 60,
   nearDet: 0.6,
   /**
    * Hedge: until the wind is confirmed on site, with at least this many teams, the last team goes
@@ -276,6 +278,37 @@ export const DETECTION = {
   minQ: 5e-4,
 };
 
+/**
+ * Search segments (models/segments.ts). Sizes follow dog-team practice: NASAR area-search tests use
+ * 40–60 acres in 1.5 h (SARTECH III) up to 140–160 acres in 4 h (SARTECH I), and a team clears
+ * about 1.3 km² in a day (Graham, "77 Facts about Search Dogs"); both give roughly 0.13 km² an hour.
+ */
+export const SEGMENTS = {
+  /** target segment area (m²): ~75 acres, a little over two hours for one team */
+  targetM2: 300_000,
+  /** search pace of one dog team (m² per hour) */
+  teamRateM2PerH: 130_000,
+  /** crossing a trail, road, stream or ridgeline costs this many cells of travel: edges follow them */
+  crossCost: 40,
+  /** segments smaller than this share of the target are folded into a neighbour */
+  minFraction: 0.3,
+  /** outline simplification tolerance (cells) */
+  simplifyCells: 1.2,
+  /** ridgelines: cells this far (m) above the mean within ~150 m count as a boundary */
+  ridgeReliefM: 12,
+  /** dogs need the air clear of other searchers for this long before entering (Hill; Graham: 15–30 min) */
+  clearAirMin: 30,
+  /**
+   * Search theory for a team that searches a whole segment: POD = 1 − e^(−coverage). Reference
+   * coverage 1.25 gives 0.7 × (1 − e^−1.25) ≈ 50%, the average NASAR uses for a dog team (Graham:
+   * "not a bad average" of a 21–96% range). Coverage scales with scent conditions (scent present
+   * relative to neutral, from the ensemble), clamped to minCond–maxCond.
+   */
+  coverageRef: 1.25,
+  minCond: 0.15,
+  maxCond: 1.5,
+};
+
 export const TRIANGULATION = {
   particles: 3000,
   backMinutes: 60,
@@ -285,6 +318,12 @@ export const TRIANGULATION = {
 };
 
 export const SEARCH = {
+  /**
+   * A no-alert search also lowers places whose scent should have drifted to the team. That depends
+   * on the modelled wind being right, and wrongly clearing ground is the costly mistake, so only
+   * this share of that drift credit is applied.
+   */
+  driftCredit: 0.5,
   defaultRadiusM: 150,
   windowMin: 60,
   recheckDet: 0.3,
