@@ -11,6 +11,7 @@ import { MISSIONS, type HabitatSpec, type MissionId } from '../config/missions';
 import { toLocal, toWorld } from '../geo/grid';
 import { groundY } from '../geo/heights';
 import { sunAt, weatherAt } from '../models/env';
+import { travelLimitBinds } from '../models/probability';
 import { buildTerrainInfo, shadowMask, type TerrainInfo } from '../models/terrainInfo';
 import { computeFallbackWind, smoothedGradients, type TerrainGradients, type WindField } from '../models/wind';
 import { ComputeClient } from '../workers/client';
@@ -171,10 +172,35 @@ function applyProb(p: ProbResult) {
   scheduleHeat();
 }
 
+/** Hours from going missing to the planning time (for the travel limit). */
+function elapsedAt(t: number): number | undefined {
+  const c = get().bundle?.config;
+  return c ? Math.max(0, t - c.missingAt) : undefined;
+}
+let probElapsed: number | undefined;
+let travelTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function recomputeProbability() {
-  const { profile, lkp } = get();
-  const p = await sourceCall(() => worker().call<ProbResult>({ type: 'probability', profile, lkp }));
+  const { profile, lkp, time } = get();
+  const elapsedH = elapsedAt(time);
+  probElapsed = elapsedH;
+  const p = await sourceCall(() => worker().call<ProbResult>({ type: 'probability', profile, lkp, elapsedH }));
   if (p) applyProb(p);
+}
+
+/** Early on, the map grows with time since missing: recompute it when the slider moves far enough to matter. */
+function maybeRecomputeForTime() {
+  const { profile, time, mission } = get();
+  if (MISSIONS[mission].source !== 'lkp') return;
+  const now = elapsedAt(time);
+  const pp = PROFILES[profile];
+  if (now === undefined || probElapsed === undefined || Math.abs(now - probElapsed) < 0.25) return;
+  if (!travelLimitBinds(pp, now) && !travelLimitBinds(pp, probElapsed)) return;
+  if (travelTimer) clearTimeout(travelTimer);
+  travelTimer = setTimeout(() => {
+    travelTimer = null;
+    recomputeProbability();
+  }, 200);
 }
 
 /** Probability requests: a source with nowhere to put probability explains itself. */
@@ -337,6 +363,7 @@ export function setTime(t: number) {
   const t1 = c?.endHour ?? TIME.end;
   set({ time: Math.min(Math.max(t, t0), t1) });
   scheduleHeat();
+  maybeRecomputeForTime();
 }
 
 // ---------------------------------------------------------------- wind
@@ -392,9 +419,11 @@ export function forecastAt(t: number) {
 // ---------------------------------------------------------------- deployment / search
 
 export async function deployTeams() {
-  const { teams, time } = get();
+  const { teams, time, onsiteWind, mission } = get();
+  // until the wind is confirmed on site, hedge one team onto the most likely ground
+  const hedge = onsiteWind === null && MISSIONS[mission].source === 'lkp';
   const deps = await withBusy('Deploying teams', () =>
-    worker().call<DeploymentOut[]>({ type: 'deploy', t: time, teams }, progress('Deploying teams')),
+    worker().call<DeploymentOut[]>({ type: 'deploy', t: time, teams, hedge }, progress('Deploying teams')),
   );
   if (deps) {
     set({ deployments: deps, layers: { ...get().layers, teams: true } });

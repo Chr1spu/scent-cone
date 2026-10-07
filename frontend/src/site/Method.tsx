@@ -106,6 +106,11 @@ export function Method() {
               <strong>Slope.</strong> ×e^(−slope/{PROBABILITY.slopeScaleDeg}°). Steep ground is less likely.
             </li>
             <li>
+              <strong>Time since missing.</strong> The distances above describe where people are eventually found. Early on, nobody can be that far, so the weight falls off softly
+              beyond a generous top speed × the time since they went missing (child 1–6: {PROFILES.child16.maxSpeedKmh} km/h, child 7–12 and dementia: {PROFILES.child712.maxSpeedKmh} km/h,
+              hiker: {PROFILES.hiker.maxSpeedKmh} km/h; at least {PROBABILITY.travelMinH * 60} minutes). Dragging the time bar early in an incident shows the area growing.
+            </li>
+            <li>
               <strong>Water</strong> cells get zero. The map is normalised to sum to one.
             </li>
             <li>
@@ -209,7 +214,8 @@ export function Method() {
           <h2 id="deploy">5. Deploying teams</h2>
           <p>
             While the scent runs, the model records which source areas (100 m blocks) send scent to which possible team positions (50 m blocks). A position scores the probability of all the
-            sources whose scent reaches it, times its detectability. Teams are then placed greedily:
+            sources whose scent reaches it, times its detectability. A dog also finds a person it passes close to, so each position also covers the ground within{' '}
+            {HOTSPOTS.nearRadiusM} m at a detectability of {HOTSPOTS.nearDet}. Teams are then placed greedily:
           </p>
           <ol>
             <li>
@@ -223,6 +229,11 @@ export function Method() {
               Block positions within {HOTSPOTS.suppressRadiusM} m. Repeat for each team.
             </li>
           </ol>
+          <p>
+            <strong>The hedge.</strong> Until a measured wind is entered, with {HOTSPOTS.hedgeMinTeams} or more teams the last one goes on the most likely ground by close range alone,
+            ignoring what the scent teams are thought to cover. In simulated tests it gives up about 1.6 points of coverage when the forecast is exact, but gains 2–3 points when the wind is
+            30–45° off. With the wind confirmed, every team is placed by scent.
+          </p>
           <p>
             Each team gets an upwind heading (dogs work into the wind toward the source) and its best hour, from hourly snapshots of the scent. Hotspots, the amber beacons, are simply the
             strongest scent; teams are where the plan says to go.

@@ -6,10 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import { HOTSPOTS, PROFILES, TURBULENCE } from '../config/modelParams';
-import { cellAt, frameOf, gridMap, type GridMeta } from '../geo/grid';
+import { cellAt, cellCenterLocal, frameOf, gridMap, type GridMeta } from '../geo/grid';
 import { meanderCoef, stabilityClass, sunAt, type Weather } from './env';
 import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, sourceSums } from './hotspots';
-import { barrierFactor, buildStaticLayers, computeProbability, shareBeyond } from './probability';
+import { barrierFactor, buildStaticLayers, computeProbability, shareBeyond, travelFactor, travelLimitBinds, travelReachM } from './probability';
 import { blockIndex, createSim, makeStepEnv, runEnsemble, step } from './scent';
 import { buildTerrainInfo, LC, noseWindFactor, type TerrainInfo } from './terrainInfo';
 import { backtrace } from './triangulation';
@@ -190,6 +190,50 @@ describe('probability outside the modelled area', () => {
     expect(hiker).toBeLessThan(0.2);
     // half the distribution lies beyond the median by definition (equal-area radius = median)
     expect(shareBeyond({ medianM: 1000, spread: 0.9 }, (1000 * Math.sqrt(Math.PI)) / 2)).toBeCloseTo(0.5, 5);
+  });
+});
+
+describe('time-since-missing limit', () => {
+  it('reach grows with time and has a floor', () => {
+    expect(travelReachM(PROFILES.child712, 1)).toBe(3000);
+    expect(travelReachM(PROFILES.child712, 0)).toBe(750); // 15-minute floor
+    expect(travelReachM(PROFILES.child712, undefined)).toBe(Infinity);
+    expect(travelReachM(PROFILES.catIndoor, 1)).toBe(Infinity); // no speed given: no limit
+  });
+  it('is a soft cut-off at the reach', () => {
+    expect(travelFactor(1500, 1500)).toBeCloseTo(0.5, 6);
+    expect(travelFactor(500, 1500)).toBeGreaterThan(0.95);
+    expect(travelFactor(3000, 1500)).toBeLessThan(0.01);
+    expect(travelFactor(1e6, Infinity)).toBe(1);
+  });
+  it('binds early and lets go once anyone could have gone further than people are found', () => {
+    expect(travelLimitBinds(PROFILES.child712, 0.5)).toBe(true);
+    expect(travelLimitBinds(PROFILES.child712, 6)).toBe(false);
+    expect(travelLimitBinds(PROFILES.hiker, 3)).toBe(true);
+  });
+  it('pulls the map in early and leaves it alone later', () => {
+    const n = 200;
+    const cell = 30;
+    const m = { crs: 'EPSG:32618', originX: 500000, originY: 4600000, cellSize: cell, cols: n, rows: n, noData: -9999 };
+    const elev = new Float32Array(n * n).fill(100);
+    const map = gridMap(m, frameOf(m));
+    const layers = buildStaticLayers(m, map, elev, new Uint8Array(n * n).fill(2), []);
+    const barrier = new Float32Array(n * n).fill(1);
+    const within = (p: Float32Array, r: number) => {
+      let s = 0;
+      for (let i = 0; i < p.length; i++) {
+        const [x, y] = cellCenterLocal(map, i);
+        if (Math.hypot(x, y) <= r) s += p[i];
+      }
+      return s;
+    };
+    const base = { meta: m, map, layers, barrier, lkp: [0, 0] as [number, number], profile: PROFILES.child712 };
+    const early = computeProbability({ ...base, elapsedH: 0.5 }); // reach 1.5 km
+    const late = computeProbability({ ...base, elapsedH: 8 });
+    const none = computeProbability(base);
+    expect(within(early, 2000)).toBeGreaterThan(0.97);
+    expect(within(none, 2000)).toBeLessThan(0.9); // ~0.78 analytically; the 6 km grid trims the tail
+    expect(Math.abs(within(late, 2000) - within(none, 2000))).toBeLessThan(0.01);
   });
 });
 

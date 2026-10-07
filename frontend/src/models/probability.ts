@@ -261,12 +261,32 @@ export interface ProbabilityInput {
   edits?: Float32Array;
   /** weight low ground: × e^(bias · clamp(TPI / 40 m, ±1.5)) (cadaver, debris) */
   lowGroundBias?: number;
+  /** hours since the person went missing (time-since-missing limit); omitted = no limit */
+  elapsedH?: number;
+}
+
+/** Furthest straight-line distance (m) the profile could plausibly have covered; Infinity = no limit. */
+export function travelReachM(profile: ProfileParams, elapsedH: number | undefined): number {
+  if (elapsedH === undefined || !profile.maxSpeedKmh) return Infinity;
+  return profile.maxSpeedKmh * 1000 * Math.max(elapsedH, PROBABILITY.travelMinH);
+}
+
+/** Soft cut-off on distance: ~1 well inside the reach, 0.5 at it, ~0 well beyond. */
+export function travelFactor(d: number, reachM: number): number {
+  if (!Number.isFinite(reachM)) return 1;
+  return 1 / (1 + Math.exp((d - reachM) / (PROBABILITY.travelSoftness * reachM)));
+}
+
+/** Whether the time limit changes the map at all (reach inside the profile's 99th-percentile distance). */
+export function travelLimitBinds(profile: ProfileParams, elapsedH: number | undefined): boolean {
+  return travelReachM(profile, elapsedH) < profile.medianM * Math.exp(2.33 * profile.spread);
 }
 
 export function computeProbability(inp: ProbabilityInput): Float32Array {
   const { meta, map, layers, barrier, lkp, profile, edits } = inp;
   const bias = inp.lowGroundBias ?? 0;
   const lcw = profile.landcoverWeight;
+  const reach = travelReachM(profile, inp.elapsedH);
   const n = meta.cols * meta.rows;
   const p = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -274,6 +294,7 @@ export function computeProbability(inp: ProbabilityInput): Float32Array {
     const [x, y] = cellCenterLocal(map, i);
     const d = Math.max(Math.hypot(x - lkp[0], y - lkp[1]), meta.cellSize);
     let w = logNormalPdf(d / 1000, profile.medianM / 1000, profile.spread) / (2 * Math.PI * d);
+    w *= travelFactor(d, reach);
     w *= 1 + profile.featureA * Math.exp(-layers.featureDist[i] / profile.featureL);
     w *= barrier[i];
     w *= Math.exp(-layers.slopeDeg[i] / PROBABILITY.slopeScaleDeg);

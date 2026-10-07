@@ -132,6 +132,12 @@ function Plan() {
       <Briefing />
       <ExportButtons />
       <p className="text-xs text-ink-3">Planned for {fmtTime(time)}. Bars: scent score for each hour at that point.</p>
+      {deployments.some((d) => d.kind === 'ground') && (
+        <p className="rounded-sm border-l-2 border-amber bg-amber/10 px-2 py-1 text-xs leading-snug text-ink-2">
+          Wind not confirmed on site, so the last team searches the most likely ground instead of a scent point: if the real wind is
+          30° or more off the forecast, that hedge finds more. Enter the measured wind in section 5 and deploy again to place every team by scent.
+        </p>
+      )}
       {deployments.map((d) => {
         const color = COLORS.team[(d.team - 1) % COLORS.team.length];
         const maxS = Math.max(...d.windowScores.map((w) => w.score), 1e-6);
@@ -139,11 +145,12 @@ function Plan() {
         return (
           <div key={d.team} className="rounded-sm border border-rule bg-card px-2.5 py-2 text-[13px]">
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 font-semibold">
+              <span className="flex items-center gap-1.5 whitespace-nowrap font-semibold">
                 <span className="h-3 w-3 rounded-full" style={{ background: color }} />
                 Team {d.team}
+                {d.kind === 'ground' && <span className="rounded-sm bg-amber/15 px-1 text-[11px] font-normal text-ink-2">likely ground</span>}
               </span>
-              <span className="num text-xs text-ink-2">covers {(d.coveredProb * 100).toFixed(1)}%</span>
+              <span className="num whitespace-nowrap text-xs text-ink-2">covers {(d.coveredProb * 100).toFixed(1)}%</span>
             </div>
             {grid(d.x, d.y) && (
               <div className="num mt-0.5 select-all text-[12px] text-ink" title="USNG / MGRS grid reference of the start point (1 m)">
@@ -228,7 +235,8 @@ function Notes() {
         <li>Wind: {windSource === 'windninja' ? 'WindNinja, terrain-adjusted, hourly' : 'forecast plus a slope-wind rule'}; scent moves with it at 0.6 m.</li>
         <li>Scent is released continuously, fades in heat and sun, lifts off sunny slopes, pools in calm hollows.</li>
         <li>Detectability is measured against neutral scent conditions.</li>
-        <li>Teams: 70% chance a dog finds what it covers; 300 m apart.</li>
+        <li>Teams: 70% chance a dog finds what it covers (drifting scent, plus close range within 150 m of the start); 300 m apart.</li>
+        <li>Until the wind is confirmed on site, one of three or more teams covers the most likely ground as a hedge.</li>
       </ul>
       {sources.length > 0 && <p className="text-xs text-ink-3">Data: {sources.join(', ')}.</p>}
       <p>

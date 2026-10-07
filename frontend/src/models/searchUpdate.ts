@@ -64,7 +64,8 @@ function srcCenter(b: BlockIndex, m: GridMap, s: number): [number, number] {
 
 /**
  * POD(source) = 0.7 × fraction of the source's scent that reached the searched area above θ1.
- * Sources inside the sector itself get at least 0.7 × local detectability (the dog walked there).
+ * Sources inside the sector itself get at least 0.7 × max(local detectability, close-range detectability):
+ * the dog walked there.
  */
 export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
   const { sector, contrib, blocks: b, heatRecv, th, map } = inp;
@@ -94,7 +95,7 @@ export function searchUpdate(inp: SearchUpdateInput): SearchUpdateResult {
     if (total > 0) for (const r of inArea) if (heatRecv[r] > th.lo) reached += contrib[r * b.nSrc + s];
     let pod = total > 0 ? POD * (reached / total) : 0;
     const [sx, sy] = srcCenter(b, map, s);
-    if (sectorContains(sector, sx, sy)) pod = Math.max(pod, POD * meanDet);
+    if (sectorContains(sector, sx, sy)) pod = Math.max(pod, POD * Math.max(meanDet, HOTSPOTS.nearDet));
     podSrc[s] = Math.min(pod, POD);
   }
   const factor = new Float32Array(b.srcOf.length);

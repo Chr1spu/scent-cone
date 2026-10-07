@@ -16,14 +16,19 @@ export interface ProfileParams {
   featureL: number;
   /** optional preference by land-cover class (1 water … 6 wetland); missing classes = 1 */
   landcoverWeight?: Partial<Record<number, number>>;
+  /**
+   * Upper bound on straight-line travel speed (km/h) while lost, for the time-since-missing limit.
+   * Deliberately generous (only rules out distances nobody could cover); omitted = no limit.
+   */
+  maxSpeedKmh?: number;
   note: string;
 }
 
 export const PROFILES: Record<ProfileId, ProfileParams> = {
-  child16: { label: 'Child (1–6)', medianM: 300, spread: 0.9, featureA: 1, featureL: 150, note: 'Lost Person Behavior, mountains' },
-  child712: { label: 'Child (7–12)', medianM: 1000, spread: 0.9, featureA: 1, featureL: 150, note: 'placeholder, tune' },
-  hiker: { label: 'Hiker', medianM: 3100, spread: 0.8, featureA: 3, featureL: 150, note: 'temperate mountains' },
-  dementia: { label: 'Person with dementia', medianM: 1100, spread: 0.9, featureA: 1, featureL: 150, note: 'urban median; wilderness placeholder' },
+  child16: { label: 'Child (1–6)', medianM: 300, spread: 0.9, featureA: 1, featureL: 150, maxSpeedKmh: 1.5, note: 'Lost Person Behavior, mountains' },
+  child712: { label: 'Child (7–12)', medianM: 1000, spread: 0.9, featureA: 1, featureL: 150, maxSpeedKmh: 3, note: 'placeholder, tune' },
+  hiker: { label: 'Hiker', medianM: 3100, spread: 0.8, featureA: 3, featureL: 150, maxSpeedKmh: 4, note: 'temperate mountains' },
+  dementia: { label: 'Person with dementia', medianM: 1100, spread: 0.9, featureA: 1, featureL: 150, maxSpeedKmh: 3, note: 'urban median; wilderness placeholder' },
   // lost pets: cats hide in cover close by (Huang et al. 2018: indoor-only cats median 39 m,
   // outdoor-access cats 315 m); dog figures are placeholders, dogs follow roads and trails
   catIndoor: { label: 'Cat (indoor-only)', medianM: 50, spread: 1.0, featureA: 0, featureL: 100, landcoverWeight: { 2: 0.5, 3: 1.6, 4: 1.3, 5: 1.4 }, note: 'Huang et al. 2018' },
@@ -45,6 +50,13 @@ export const PROBABILITY = {
   brushDown: 0.5,
   /** detail cells below this probability do not emit scent */
   minSourceProb: 1e-6,
+  /**
+   * Time-since-missing limit: the profile distances describe where people are eventually found,
+   * so early on, weight beyond maxSpeed × elapsed time falls off (logistic, width = softness × reach).
+   * Elapsed time is floored so the map never collapses onto the last known point.
+   */
+  travelMinH: 0.25,
+  travelSoftness: 0.2,
 };
 
 /** Fallback slope-wind model; mirrors backend/app/config.py SLOPE_WIND. */
@@ -152,6 +164,19 @@ export const HOTSPOTS = {
   contribShare: 0.02,
   maxSourcesPerRecv: 50,
   dogPOD: 0.7,
+  /**
+   * Close range: a team also works the ground around its start, and a dog finds a person it
+   * passes near even when drifted scent is weak. Heuristic: within 150 m (the default searched-
+   * sector radius), detectability at least 0.6, so POD ≈ 0.7 × 0.6 ≈ 0.4 there.
+   */
+  nearRadiusM: 150,
+  nearDet: 0.6,
+  /**
+   * Hedge: until the wind is confirmed on site, with at least this many teams, the last team goes
+   * on the most likely ground instead of a scent point. docs/EVALUATION.md: with a wind-direction
+   * error of 30° or more this beats placing every team by scent; with a good forecast it costs ~1–2 points.
+   */
+  hedgeMinTeams: 3,
   suppressRadiusM: 300,
   maxSlopeDeg: 35,
   cliffBufferM: 20,

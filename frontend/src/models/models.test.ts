@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HOTSPOTS, PROFILES, SCENT, TURBULENCE } from '../config/modelParams';
 import { bilinear, cellAt, frameOf, gridMap, sampleLocal, type GridMeta } from '../geo/grid';
 import { decayTau, type Weather } from './env';
-import { deployableCells, detThresholds, detectability, blockMean, greedyDeploy, sourceSums } from './hotspots';
+import { deployableCells, detThresholds, detectability, blockMean, greedyDeploy, nearSources, sourceSums, teamCoverage } from './hotspots';
 import { buildStaticLayers, barrierFactor, computeProbability, resampleToDetail } from './probability';
 import { backtrace, posterior } from './triangulation';
 import { blockIndex, createSim, makeStepEnv, runEnsemble, step, type StepEnv } from './scent';
@@ -241,6 +241,60 @@ describe('greedy deployment', () => {
     for (const d of deps) expect(deployable[d.cell]).toBe(1);
     for (let i = 0; i < deps.length; i++)
       for (let j = i + 1; j < deps.length; j++) expect(Math.hypot(deps[i].x - deps[j].x, deps[i].y - deps[j].y)).toBeGreaterThan(HOTSPOTS.suppressRadiusM - 60);
+  });
+});
+
+describe('close-range detection', () => {
+  it('takes the stronger of scent and close-range detection per source', () => {
+    const m = teamCoverage([1, 2], 0.3, [2, 3], 0.6);
+    expect([...m.entries()].sort()).toEqual([[1, 0.3], [2, 0.6], [3, 0.6]]);
+    expect([...teamCoverage([1], 0, [], 0.6)]).toEqual([]);
+  });
+  it('finds source blocks around a receiver', () => {
+    const n = 100;
+    const ti = flatTerrain(n, 10);
+    const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
+    // receiver at block (10, 10): centre cell 52, inside source block (5, 5)
+    const near = nearSources(blocks, ti.map, 10 * blocks.recvCols + 10, 150);
+    expect(near).toContain(5 * blocks.srcCols + 5);
+    expect(near.length).toBeGreaterThanOrEqual(5);
+    expect(near.length).toBeLessThanOrEqual(9);
+    expect(nearSources(blocks, ti.map, 0, 0).length).toBeLessThanOrEqual(1);
+  });
+  it('still places a team on likely ground when no scent reaches anywhere', () => {
+    const n = 100;
+    const ti = flatTerrain(n, 10);
+    const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
+    const prob = new Float32Array(n * n);
+    prob[70 * n + 30] = 1; // all probability at col 30, row 70
+    const deployable = new Uint8Array(n * n).fill(1);
+    const none = (len: number) => new Float32Array(len);
+    const common = { contrib: none(blocks.nRecv * blocks.nSrc), blocks, detRecv: none(blocks.nRecv), heat: none(n * n), q: sourceSums(prob, blocks), deployable, map: ti.map, teams: 2 };
+    const deps = greedyDeploy(common);
+    expect(deps.length).toBe(1); // the second team would cover nothing new
+    const d = deps[0];
+    const [sx, sy] = [(30 - ti.map.ox) / ti.map.inv, -(70 - ti.map.oy) / ti.map.inv];
+    expect(Math.hypot(d.x - sx, d.y - sy)).toBeLessThan(HOTSPOTS.nearRadiusM + 50);
+    expect(d.coveredProb).toBeCloseTo(HOTSPOTS.nearDet, 5);
+    expect(greedyDeploy({ ...common, nearRadiusM: 0 }).length).toBe(0);
+  });
+  it('puts the hedge team on the likely ground even when a scent team claims to cover it', () => {
+    const n = 100;
+    const ti = flatTerrain(n, 10);
+    const blocks = blockIndex(n, n, HOTSPOTS.recvBlockCells, HOTSPOTS.srcBlockCells);
+    const prob = new Float32Array(n * n);
+    prob[70 * n + 30] = 1;
+    const srcA = blocks.srcOf[70 * n + 30];
+    const far = blocks.recvOf[10 * n + 90]; // ~860 m away, downwind in this made-up world
+    const contrib = new Float32Array(blocks.nRecv * blocks.nSrc);
+    contrib[far * blocks.nSrc + srcA] = 1;
+    const detRecv = new Float32Array(blocks.nRecv);
+    detRecv[far] = 1;
+    const deps = greedyDeploy({ contrib, blocks, detRecv, heat: new Float32Array(n * n), q: sourceSums(prob, blocks), deployable: new Uint8Array(n * n).fill(1), map: ti.map, teams: 2, prob, scentTeams: 1 });
+    expect(deps.map((d) => d.kind)).toEqual(['scent', 'ground']);
+    expect(deps[0].recv).toBe(far);
+    const [sx, sy] = [(30 - ti.map.ox) / ti.map.inv, -(70 - ti.map.oy) / ti.map.inv];
+    expect(Math.hypot(deps[1].x - sx, deps[1].y - sy)).toBeLessThan(60); // stands on the most likely cell's block
   });
 });
 

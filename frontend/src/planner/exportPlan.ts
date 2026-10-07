@@ -51,7 +51,7 @@ export function planGeometry(inp: PlanExportInput): { points: PlanPoint[]; lines
     const ref = usng(p.lat, p.lon);
     const deg = Math.round(((Math.atan2(d.upwind[0], d.upwind[1]) * 180) / Math.PI + 360) % 360);
     const desc =
-      `Team ${d.team} start. ${ref}. Work toward ${deg}° (${POINTS[Math.round(deg / 45) % 8]}) into a ${d.windSpeed.toFixed(1)} m/s wind. ` +
+      `Team ${d.team} start${d.kind === 'ground' ? ' (ground search of the most likely area)' : ''}. ${ref}. Work toward ${deg}° (${POINTS[Math.round(deg / 45) % 8]}) into a ${d.windSpeed.toFixed(1)} m/s wind. ` +
       `Best window ${hhmm(d.bestWindow[0])}-${hhmm(d.bestWindow[1])}. Covers ${(d.coveredProb * 100).toFixed(1)}% of the probability. ` +
       `Planned for ${hhmm(inp.time)} on ${inp.date}. Scentline: modelled, not observed; confirm wind on site.`;
     points.push({ ...p, name: `Team ${d.team} start`, desc, usng: ref });

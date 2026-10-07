@@ -57,6 +57,8 @@ interface State {
   snapshots: { key: string; byHour: Map<number, Float32Array> } | null;
   profile: keyof typeof PROFILES;
   lkp: [number, number];
+  /** hours since the person went missing, for the travel limit (undefined = none) */
+  elapsedH: number | undefined;
   warmed: boolean;
   mission: MissionId;
   source: SourceSpec;
@@ -114,6 +116,7 @@ function init(m: InitMsg) {
     wind: m.wind,
     barrierCache: new Map(),
     edits: new Float32Array(m.overview.elev.length).fill(1),
+    elapsedH: undefined,
     prior: null,
     L: new Float32Array(nD).fill(1),
     outside: 1,
@@ -189,6 +192,7 @@ function recomputePrior() {
     lkp: s.lkp,
     profile: PROFILES[s.profile],
     edits: s.edits,
+    elapsedH: s.elapsedH,
     lowGroundBias: mission.tuning.lowGroundBias,
   });
 }
@@ -341,7 +345,7 @@ async function hourlySnapshots(report: (f: number, l: string) => void): Promise<
   return byHour;
 }
 
-async function deploy(t: number, teams: number, report: (f: number, l: string) => void): Promise<DeploymentOut[]> {
+async function deploy(t: number, teams: number, hedge: boolean, report: (f: number, l: string) => void): Promise<DeploymentOut[]> {
   const s = st();
   const e = await ensembleAt(t, (f, l) => report(f * 0.55, l));
   report(0.56, 'Greedy deployment');
@@ -358,6 +362,8 @@ async function deploy(t: number, teams: number, report: (f: number, l: string) =
     deployable: tune.reachM === null ? s.deployable : withinReach(s.deployable, s.detailPost!, s.ti.meta.cols, s.ti.meta.rows, s.ti.meta.cellSize, tune.reachM),
     map: s.ti.map,
     teams,
+    prob: s.detailPost!,
+    scentTeams: hedge && teams >= HOTSPOTS.hedgeMinTeams ? teams - 1 : teams,
   });
   const snaps = await hourlySnapshots(report);
   return deps.map((d) => {
@@ -382,6 +388,7 @@ async function deploy(t: number, teams: number, report: (f: number, l: string) =
       coveredProb: d.coveredProb * s.segmentFraction,
       bestWindow: [best.hour - 1, best.hour] as [number, number],
       windowScores,
+      kind: d.kind,
     };
   });
 }
@@ -491,6 +498,7 @@ async function handle({ id, req }: Envelope): Promise<void> {
         const s = st();
         s.profile = req.profile;
         s.lkp = req.lkp;
+        s.elapsedH = req.elapsedH;
         recomputePrior();
         result = recomputePosterior();
         if (!s.warmed && pool && s.detailPost) {
@@ -511,7 +519,7 @@ async function handle({ id, req }: Envelope): Promise<void> {
         result = await heatAt(req.t, report);
         break;
       case 'deploy':
-        result = await deploy(req.t, req.teams, report);
+        result = await deploy(req.t, req.teams, !!req.hedge, report);
         break;
       case 'alert':
         result = alert(req.x, req.y, req.t, report);

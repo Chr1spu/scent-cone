@@ -21,7 +21,7 @@ import { join } from 'node:path';
 import { ENSEMBLE, HOTSPOTS, PROFILES, SCENT, TURBULENCE } from '../src/config/modelParams';
 import { loadOffline } from '../src/api/loader';
 import { cellCenterLocal, gridMap, toLocal } from '../src/geo/grid';
-import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, sourceSums, contributingSources, type DetThresholds } from '../src/models/hotspots';
+import { blockMean, deployableCells, detThresholds, detectability, greedyDeploy, sourceSums, contributingSources, nearSources, teamCoverage, type DetThresholds } from '../src/models/hotspots';
 import { barrierFactor, buildStaticLayers, computeProbability, rasterizeLines, rasterizePolygons, resampleToDetail } from '../src/models/probability';
 import { Rng } from '../src/models/rng';
 import { blockIndex, runEnsemble, type BlockIndex } from '../src/models/scent';
@@ -171,8 +171,9 @@ function success(plan: number[], w: World, pod = HOTSPOTS.dogPOD): number {
       set = new Set(contributingSources(w.run.contrib, blocks.nSrc, r));
       w.contribSets.set(r, set);
     }
-    const p = pod * w.det[r];
-    for (const s of set) miss[s] *= 1 - p;
+    // same detection rule as the planner: scent that reaches the team, plus close range
+    const near = HOTSPOTS.nearDet > 0 ? nearSources(blocks, ti.map, r, HOTSPOTS.nearRadiusM) : [];
+    for (const [s, d] of teamCoverage([...set], w.det[r], near, HOTSPOTS.nearDet)) miss[s] *= 1 - pod * d;
   }
   let found = 0;
   for (let s = 0; s < blocks.nSrc; s++) found += q[s] * (1 - miss[s]);
@@ -183,8 +184,13 @@ function success(plan: number[], w: World, pod = HOTSPOTS.dogPOD): number {
 log('model ensemble (forecast wind)…');
 const thRecv = reference(wind);
 const model = scent(wind, 1000 + T * 60);
-/** Hedge against a wrong forecast: scent-placed teams plus one on the most-likely ground. */
+/** Hedge against a wrong forecast, as the planner does it: the last team on the most likely ground. */
 function hedgedPlan(run: Run, th: DetThresholds): number[] {
+  const detRecv = detectability(run.heatRecv, th);
+  return greedyDeploy({ contrib: run.contrib, blocks, detRecv, heat: run.heat, q, deployable, map: ti.map, teams: TEAMS, prob, scentTeams: TEAMS - 1 }).map((d) => d.cell);
+}
+/** The earlier hedge: two scent teams plus the single most likely cell, 300 m clear of them. */
+function naiveHedgedPlan(run: Run, th: DetThresholds): number[] {
   const detRecv = detectability(run.heatRecv, th);
   const scentTeams = greedyDeploy({ contrib: run.contrib, blocks, detRecv, heat: run.heat, q, deployable, map: ti.map, teams: TEAMS - 1 }).map((d) => d.cell);
   const extra = [...Array(nD).keys()]
@@ -196,6 +202,7 @@ function hedgedPlan(run: Run, th: DetThresholds): number[] {
 const plans: Record<string, number[]> = {
   Scentline: scentlinePlan(model, thRecv),
   'Hedged (2 by scent + 1 on most-likely ground)': hedgedPlan(model, thRecv),
+  'Naive hedge (+ single most likely cell)': naiveHedgedPlan(model, thRecv),
   'Most-likely ground (no scent)': probabilityPlan(),
   'Ring around the LKP': lkpRingPlan(),
   'Straight downwind of the LKP': downwindPlan(),
@@ -284,6 +291,8 @@ const variants: Variant[] = [
   { name: 'Turbulence memory 1200 s', apply: () => (TURBULENCE.lagrangianS = 1200), undo: restore },
   { name: 'Dog detection 50%', apply: () => {}, undo: () => {}, pod: 0.5 },
   { name: 'Dog detection 90%', apply: () => {}, undo: () => {}, pod: 0.9 },
+  { name: 'Close-range detectability 0.3', apply: () => (HOTSPOTS.nearDet = 0.3), undo: () => (HOTSPOTS.nearDet = 0.6) },
+  { name: 'Close-range detectability 0.9', apply: () => (HOTSPOTS.nearDet = 0.9), undo: () => (HOTSPOTS.nearDet = 0.6) },
   { name: 'Team spacing 150 m', apply: () => {}, undo: () => {}, spacing: 150 },
   { name: 'Team spacing 500 m', apply: () => {}, undo: () => {}, spacing: 500 },
 ];

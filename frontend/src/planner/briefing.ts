@@ -50,7 +50,7 @@ export function briefingText({ area, time, lkp, deployments, grid }: BriefingInp
     const pct = Math.round(d.coveredProb * 100);
     const g = grid?.(d.x, d.y);
     parts.push(
-      `Team ${d.team}. Start ${where}${g ? `, grid ${spokenGrid(g)}` : ''}. Work ${heading}, into a ${d.windSpeed.toFixed(1)} metre per second wind. ` +
+      `Team ${d.team}${d.kind === 'ground' ? ', ground search of the most likely area' : ''}. Start ${where}${g ? `, grid ${spokenGrid(g)}` : ''}. Work ${heading}, into a ${d.windSpeed.toFixed(1)} metre per second wind. ` +
         `Best window ${spokenTime(d.bestWindow[0])} to ${spokenTime(d.bestWindow[1])}. ` +
         `This start covers ${pct < 1 ? 'under 1' : pct} percent of the probability.`,
     );

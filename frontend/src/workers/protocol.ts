@@ -56,6 +56,8 @@ export interface DeploymentOut {
   coveredProb: number;
   bestWindow: [number, number];
   windowScores: { hour: number; score: number }[];
+  /** 'ground': hedge team on the most likely ground (wind not confirmed on site) */
+  kind?: 'scent' | 'ground';
 }
 
 export interface AlertResult {
@@ -72,10 +74,10 @@ export interface SearchResult {
 export type Request =
   | { type: 'init'; data: InitMsg }
   | { type: 'setWind'; wind: WindField }
-  | { type: 'probability'; profile: ProfileId; lkp: [number, number] }
+  | { type: 'probability'; profile: ProfileId; lkp: [number, number]; elapsedH?: number }
   | { type: 'brush'; x: number; y: number; factor: number }
   | { type: 'heat'; t: number }
-  | { type: 'deploy'; t: number; teams: number }
+  | { type: 'deploy'; t: number; teams: number; hedge?: boolean }
   | { type: 'alert'; x: number; y: number; t: number }
   | { type: 'searched'; sector: SearchedSector; t0: number; t1: number }
   | { type: 'resetSearch' }
